@@ -25,6 +25,7 @@ cmd:text('Options')
 cmd:argument('-model','model checkpoint to use for sampling')
 cmd:option('-backend', 'cuda', 'cpu|cuda|cl')
 cmd:option('-length', 2000, 'number of characters to sample')
+cmd:option('-temperature', 1, 'temperature of sampling')
 cmd:text()
 
 opt = cmd:parse(arg)
@@ -66,22 +67,45 @@ print('net', net)
 params = net:getParameters()
 print('torch.type(params)', torch.type(params))
 
+function sampleSoftMax(log_q, t)
+  -- eg see https://en.wikipedia.org/wiki/Softmax_function, section 'Reinforcement learning'
+  local q = log_q:clone():exp()
+  q:mul(1/t)
+--  print('q:sum()', q:sum())
+  local sum_q = q:sum()
+  q:div(sum_q)
+--  print('q:sum()', q:sum())
+  local sample = torch.multinomial(q, 1)
+  return sample
+end
+
 --local netandcrit = torch.load('out/critandnet.t7')
 -- seed with '\n' for now. a bit too much prior knowledge introduced by doing this, but
 -- gets it working for now....
 local newLine = '\n'
 --print('vocab', vocab)
 --for k,v in pairs(vocab) do
---  print(k, v)
+--  print('vocab', k, v)
+--end
+--for k,v in pairs(ivocab) do
+--  print('ivocab', k, v, torch.type(k), torch.type(v))
 --end
 local newLineCode = newLine:byte(1)
 --print('newLineCode', newLineCode)
 local prevChar = vocab[newLineCode]
 net:evaluate()
+local sample = ''
 for i=1,opt.length do
   local output = net:forward(identity[prevChar])
   local outputexp = output:clone():exp()
-  print('outputexp', outputexp)
-  print('outputexp:sum()', outputexp:sum())
+--  print('outputexp', outputexp)
+--  print('outputexp:sum()', outputexp:sum())
+  local thisChar = sampleSoftMax(output, opt.temperature)
+--  print('thisChar', thisChar, 'torch.type(thisChar[1])', torch.type(thisChar[1]))
+--  print('thisChar', thisChar)
+--  print('ivocab[thisChar]', ivocab[thisChar[1]])
+  sample = sample .. string.char(ivocab[thisChar[1]])
+  prevChar = thisChar[1]
 end
+print(sample)
 
