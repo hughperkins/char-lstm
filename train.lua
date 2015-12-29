@@ -22,8 +22,22 @@ require 'rnn'
 require 'util/timer'
 require 'util/file_helper'
 require 'net'
+require 'shared'
 
-local backend = 'cuda'
+cmd = torch.CmdLine()
+cmd:text()
+cmd:text('Train a character-level language model')
+cmd:text()
+cmd:text('Options')
+-- data
+cmd:option('-dataset','tinyshakespeare','name of data directory. Should contain the file input.txt with input data')
+cmd:option('-backend','cuda','cpu|cuda|cl')
+cmd:text()
+
+opt = cmd:parse(arg)
+
+local backend = opt.backend
+--local backend = 'cuda'
 --backend = 'cl'
 --backend = 'cpu'
 
@@ -35,11 +49,8 @@ elseif backend == 'cl' then
   require 'clnn'
 end
 
-local dataset = 'tinyshakespeare'
-local in_file = 'input.txt'
-local in_t7 = 'input.t7'
-local vocab_t7 = 'vocab.t7'
-local weights_t7 = 'weights_$DATASET_$EPOCH_$IT.t7'
+--local dataset = 'tinyshakespeare'
+local dataset = opt.dataset
 
 local dataDir = 'data/' .. dataset
 
@@ -66,12 +77,15 @@ function text_to_t7(in_textfile, out_tensorfile, out_vocabfile)
   state.vocab = vocab
   state.ivocab = ivocab
 
+--  -- add a null character, which will be used for start-of-sequence
+--  ivocab[1] = 0
+--  vocab[0] = 1
+
   local f = io.open(in_textfile, "r")
   local input_string = f:read(cache_len)
   local pos = 1
   repeat
     local len = input_string:len()
-    print('len', len)
     for i=1,len do
       local char = input_string:byte(i)
       if vocab[char] == nil then
@@ -107,10 +121,6 @@ end
 
 local vocabs = torch.load(dataDir .. '/' .. vocab_t7)
 local input = torch.load(dataDir .. '/' .. in_t7)
-print('vocabs', vocabs)
-for k,v in pairs(vocabs) do
-  print('k', k)
-end
 print('loaded input')
 local ivocab = vocabs.ivocab
 local vocab = vocabs.vocab
@@ -194,7 +204,7 @@ while true do
     local filename = weights_t7:gsub('$DATASET', dataset):gsub('$EPOCH', epoch):gsub('$IT', it)
     print('filename', filename)
     local data = {}
-    data.dataDir = dataDir
+    data.dataset = dataset
     data.netParams = netParams
     data.weights = params:float()
     data.backend = backend
