@@ -19,6 +19,10 @@ th train.lua
 
 Not implemented yet :-)
 
+## Naming
+
+If you can think of a better name, please raise an issue to suggest :-)
+
 ## License
 
 Original char-rnn code is MIT.  New code in this repo are BSDv2
