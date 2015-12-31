@@ -30,13 +30,22 @@ cmd:text('Train a character-level language model')
 cmd:text()
 cmd:text('Options')
 -- data
-cmd:option('-dataset','tinyshakespeare','name of data directory. Should contain the file input.txt with input data')
-cmd:option('-backend','cuda','cpu|cuda|cl')
+cmd:option('-data','tinyshakespeare','name of data directory. Should contain the file input.txt with input data')
+cmd:option('-back','cuda','cpu|cuda|cl')
+cmd:option('-len', -1, 'only use this many characters from input data. -1 for all data')
+cmd:option('-drop',0 , 'dropout probability')
+cmd:option('-lr',0.1, 'learning rate')
+cmd:option('-profile', '', 'options file, written in lua')
 cmd:text()
 
 opt = cmd:parse(arg)
 
-local backend = opt.backend
+if opt.profile ~= '' then
+  print('profile', opt.profile)
+  require(opt.profile)
+end
+
+local backend = opt.back
 --local backend = 'cuda'
 --backend = 'cl'
 --backend = 'cpu'
@@ -50,16 +59,17 @@ elseif backend == 'cl' then
 end
 
 --local dataset = 'tinyshakespeare'
-local dataset = opt.dataset
+local dataset = opt.data
 
 local dataDir = 'data/' .. dataset
 
-local dropoutProb = 0.0
-local hiddenSizes = {128, 128}
-local learningRate = 0.01
-local seqLength = 50
-local batchSize = 50
-local dumpIntervalIts = 50
+local dropoutProb = opt.dropout
+local hiddenSizes = {32}
+local learningRate = opt.lr
+local seqLength = 3
+local batchSize = 1
+local dumpIntervalIts = 100
+local max_input_length = opt.len
 
 local outDir = 'out'
 
@@ -122,6 +132,9 @@ end
 local vocabs = torch.load(dataDir .. '/' .. vocab_t7)
 local input = torch.load(dataDir .. '/' .. in_t7)
 print('loaded input')
+if max_input_length > 0 then
+  input:resize(max_input_length)
+end
 local ivocab = vocabs.ivocab
 local vocab = vocabs.vocab
 
@@ -147,12 +160,24 @@ else
 end
 
 local input_len = input:size(1)
+print('input_len', input_len)
+
 local batchSpacing = math.ceil(input_len / batchSize)
+print('batchSpacing', batchSpacing)
 local inputDouble = input:clone():resize(2, input_len)
 inputDouble[1]:copy(input)
 inputDouble[2]:copy(input)
 inputDouble = inputDouble:reshape(input_len * 2)
 local inputStriped = inputDouble:unfold(1, input_len, batchSpacing):t()
+inputStriped:resize(input_len, batchSize)
+print('inputStriped', inputStriped)
+
+function getLabel(vector)
+  -- assumes a single 1-d vector of probabilities
+  local max, label = vector:max(1)
+--  print('max', max, 'label', label)
+  return label[1]
+end
 
 local it = 1
 local epoch = 1
@@ -170,24 +195,59 @@ while true do
   batchOutputs = {}
 
   local timer = timer_init()
+  local printOutput = false
+  local inputString = ''
+  local targetString = ''
+  local outputString = ''
+--  print('it', it, it % 10)
+  if (epoch * itsPerEpoch + it) % 50 == 0 then
+    print('it', it)
+    printOutput = true
+  end
+  local epochOffset = epoch - 1
+  epochOffset = 0
   for s=1,seqLength do
-    local batchOffset = ((epoch - 1) + (it - 1) * seqLength + (s - 1) + 1 - 1) % input_len + 1
+    local batchOffset = (epochOffset + (it - 1) * seqLength + (s - 1) + 1 - 1) % input_len + 1
 
     timer_update(timer, 'forward setup')
     local bc2 = inputStriped[batchOffset]
+
+    if printOutput then
+--      print('batchOffset', batchOffset)
+      local thisCharCode = bc2[1]
+      local thisChar = string.char(ivocab[thisCharCode])
+--      print('thisChar', thisChar)
+      inputString = inputString .. thisChar
+    end
+
     batchInput:zero()
     batchInput:scatter(2, bc2:reshape(batchSize, 1), 1)
 
     timer_update(timer, 'forward run')
     local batchOutput = net:forward(batchInput)
+    if printOutput then
+      print('batchInput', batchInput:narrow(2,1,5):reshape(1,5))
+      print('batchOutput:exp()', batchOutput:exp():narrow(2,1,5):reshape(1,5))
+      local label = getLabel(batchOutput[1])
+      outputString = outputString .. string.char(ivocab[label])
+    end
     batchInputs[s] = batchInput
     batchOutputs[s] = batchOutput
   end
 
   for s=seqLength,1,-1 do
     timer_update(timer, 'backward setup')
-    local batchOffset = ((epoch - 1) + (it - 1) * seqLength + (s - 1) + 1 - 1) % input_len + 1
-    local bt2 = inputStriped[batchOffset + 1]
+    local targetOffset = (epochOffset + (it - 1) * seqLength + (s - 1) + 1 + 1 - 1) % input_len + 1
+    local bt2 = inputStriped[targetOffset]
+
+    if printOutput then
+--      print('targetOffset', targetOffset)
+--      print('bt2', bt2)
+      local thisCharCode = bt2[1]
+      local thisChar = string.char(ivocab[thisCharCode])
+--      print('thisChar', thisChar)
+      targetString = thisChar .. targetString
+    end
 
     timer_update(timer, 'backward run')
     local batchLoss = crit:forward(batchOutputs[s], bt2)
@@ -196,10 +256,16 @@ while true do
     net:backward(batchInputs[s], batchGradOutput)
   end
   timer_update(timer, 'end')
-  timer_dump(timer)
 
   net:updateParameters(learningRate)
-  print('epoch=' .. epoch, 'it=' .. it .. '/' .. itsPerEpoch, 'seqLoss=' .. seqLoss, 'time=' .. sys.toc())
+  if printOutput then
+--    timer_dump(timer)
+    print('params:narrow(1,1,10)', params:narrow(1,1,8):reshape(1,8))
+    print('input ', inputString)
+    print('target', targetString)
+    print('output', outputString)
+    print('epoch=' .. epoch, 'it=' .. it .. '/' .. itsPerEpoch, 'seqLoss=' .. seqLoss, 'time=' .. sys.toc())
+  end
   if it ~= 1 and ((it - 1) % dumpIntervalIts == 0) then
     local filename = weights_t7:gsub('$DATASET', dataset):gsub('$EPOCH', epoch):gsub('$IT', it)
     print('filename', filename)
