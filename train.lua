@@ -304,13 +304,12 @@ while true do
       net:forget()
       net:zeroGradParameters()
       local batchOffset = (epochOffset + (it - 1) * seqLength + (s - 1) + 1 - 1) % input_len + 1
+      local targetOffset = (batchOffset + 1 - 1) % input_len + 1
 
       timer_update(timer, 'forward setup')
       populateBatchInput(batchOffset, debugState, inputStriped, batchInput)
 
       timer_update(timer, 'backward setup')
-
-      local targetOffset = (epochOffset + (it - 1) * seqLength + (s - 1) + 1 + 1 - 1) % input_len + 1
       local batchTarget = makeBatchTarget(targetOffset, debugState, inputStriped)
 
       timer_update(timer, 'forward run')
@@ -319,12 +318,12 @@ while true do
 
       timer_update(timer, 'backward run')
       local batchLoss = crit:forward(batchOutput, batchTarget)
-
-      seqLoss = seqLoss + batchLoss
       local batchGradOutput = crit:backward(batchOutput, batchTarget)
       net:backward(batchInput, batchGradOutput)
-      doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)
       net:updateParameters(learningRate)
+
+      seqLoss = seqLoss + batchLoss
+      doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)
     end
   else
     error('invalid opt.backprop value')
