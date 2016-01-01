@@ -226,6 +226,25 @@ function populateBatchInput(batchOffset, debugState, inputStriped, batchInput)
   end
 end
 
+-- what this does is, shift value up and down by an integer multiple
+-- of modulus, so that it is in range 1 .. modulus
+-- for example, if modules is 5, then for the following input values
+-- we will get the following output values
+-- input  output
+-- 0      5
+-- 1      1
+-- 2      2
+-- 3      3
+-- 4      4
+-- 5      5
+-- 6      1
+-- 7      2
+-- (this is different from normal lua '%' function, which will put
+-- into range 0 .. (modulus-1), which is quite not lua-like :-)
+function lua_modulus(value, modulus)
+  return (value - 1) % modulus + 1
+end
+
 function doOutputDebug(debugState, batchOutput)
   if debugState.printOutput then
 --    print('batchInput', batchInput:narrow(2,1,seqLength):reshape(1,seqLength))
@@ -287,7 +306,7 @@ while true do
     net:zeroGradParameters()
     net:backwardOnline()
     for s=1,seqLength do
-      local batchOffset = (epochOffset + (it - 1) * seqLength + (s - 1) + 1 - 1) % input_len + 1
+      local batchOffset = lua_moduls( (epochOffset + (it - 1) * seqLength + (s - 1) + 1, input_len)
       batchOffsets[s] = batchOffset
 
       timer_update(timer, 'forward setup')
@@ -304,6 +323,7 @@ while true do
     for s=seqLength,1,-1 do
       timer_update(timer, 'backward setup')
       local targetOffset = (batchOffsets[s] + 1 - 1) % input_len + 1
+      local targetOffset = lua_modulus(batchOffsets[s] + 1, input_len)
       local batchTarget = makeBatchTarget(targetOffset, debugState, inputStriped)
 
       timer_update(timer, 'backward run')
@@ -321,8 +341,8 @@ while true do
     for s=1,seqLength do
       net:forget()
       net:zeroGradParameters()
-      local batchOffset = (epochOffset + (it - 1) * seqLength + (s - 1) + 1 - 1) % input_len + 1
-      local targetOffset = (batchOffset + 1 - 1) % input_len + 1
+      local batchOffset = lua_modulus(epochOffset + (it - 1) * seqLength + (s - 1) + 1, input_len)
+      local targetOffset = lua_modulus(batchOffset + 1, input_len)
 
       timer_update(timer, 'forward setup')
       populateBatchInput(batchOffset, debugState, inputStriped, batchInputs[s])
