@@ -306,7 +306,7 @@ while true do
     net:zeroGradParameters()
     net:backwardOnline()
     for s=1,seqLength do
-      local batchOffset = lua_moduls( (epochOffset + (it - 1) * seqLength + (s - 1) + 1, input_len)
+      local batchOffset = lua_modulus(epochOffset + (it - 1) * seqLength + (s - 1) + 1, input_len)
       batchOffsets[s] = batchOffset
 
       timer_update(timer, 'forward setup')
