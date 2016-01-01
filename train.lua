@@ -281,7 +281,7 @@ while true do
   net:updateParameters(learningRate)
   if printOutput then
 --    timer_dump(timer)
-    print('params:narrow(1,1,10)', params:narrow(1,1,8):reshape(1,8))
+    print('params:narrow(1,1,seqLength)', params:narrow(1,1,seqLength):reshape(1,seqLength))
     print('input ', inputString)
     print('target', targetString)
     print('output', outputString)
