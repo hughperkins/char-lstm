@@ -341,7 +341,48 @@ while true do
     end
     net:updateParameters(learningRate)
   elseif opt.backprop == 'throughtime' then
-    error('not yet implemented')
+    if #hiddenSizes > 1 then
+      error('cannot use backwardsthroughtime with more than one hidden layer, should use backwardsonline instead')
+    end
+
+    net:forget()
+    net:zeroGradParameters()
+--    net:backwardOnline()
+    for s=1,seqLength do
+      batchOffsets[s] = lua_modulus(epochOffset + (it - 1) * seqLength + (s - 1) + 1, input_len)
+
+      timer_update(timer, 'forward setup')
+      populateBatchInput(batchOffsets[s], debugState, inputStriped, batchInputs[s])
+
+      timer_update(timer, 'forward run')
+      local batchOutput = net:forward(batchInputs[s])
+--      batchInputs[s] = batchInput
+      batchOutputs[s]:copy(batchOutput)
+
+      doOutputDebug(debugState, batchOutput)
+--    end
+
+--    for s=seqLength,1,-1 do
+      timer_update(timer, 'backward setup')
+      local targetOffset = lua_modulus(batchOffsets[s] + 1, input_len)
+      local batchTarget = makeBatchTarget(targetOffset, debugState, inputStriped)
+
+      timer_update(timer, 'backward run')
+      local batchLoss = crit:forward(batchOutputs[s], batchTarget)
+      local batchGradOutput = crit:backward(batchOutputs[s], batchTarget)
+      net:backward(batchInputs[s], batchGradOutput)
+
+--      if debugState.printOutput then
+--        print('batchInputs[s]', batchInputs[s])
+--        print('batchTarget', batchTarget)
+--        print('batchGradOutput', batchGradOutput)
+--      end
+
+      seqLoss = seqLoss + batchLoss
+      doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)
+    end
+    net:backwardThroughTime()
+    net:updateParameters(learningRate)
   elseif opt.backprop == 'noseq' then
     for s=1,seqLength do
       net:forget()
