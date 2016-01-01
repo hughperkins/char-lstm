@@ -33,6 +33,8 @@ cmd:text('Options')
 cmd:option('-data','tinyshakespeare','name of data directory. Should contain the file input.txt with input data')
 cmd:option('-back','cuda','cpu|cuda|cl')
 cmd:option('-len', -1, 'only use this many characters from input data. -1 for all data')
+cmd:option('-seq', 50, 'sequence length to use')
+cmd:option('-hidden', '128,128', 'size of hidden layers, comma-separated, one per required hidden layer')
 cmd:option('-drop',0 , 'dropout probability')
 cmd:option('-lr',0.1, 'learning rate')
 cmd:option('-profile', '', 'options file, written in lua')
@@ -64,9 +66,9 @@ local dataset = opt.data
 local dataDir = 'data/' .. dataset
 
 local dropoutProb = opt.dropout
-local hiddenSizes = {32}
+local hiddenSizes = opt.hidden:split(',')
 local learningRate = opt.lr
-local seqLength = 3
+local seqLength = opt.seq
 local batchSize = 1
 local dumpIntervalIts = 100
 local max_input_length = opt.len
@@ -130,13 +132,24 @@ if not paths.filep(dataDir .. '/' .. in_t7) or not paths.filep(dataDir .. '/' ..
 end
 
 local vocabs = torch.load(dataDir .. '/' .. vocab_t7)
+local ivocab = vocabs.ivocab
+local vocab = vocabs.vocab
 local input = torch.load(dataDir .. '/' .. in_t7)
 print('loaded input')
 if max_input_length > 0 then
+  print('max_input_length', max_input_length)
   input:resize(max_input_length)
+  if max_input_length < #ivocab then
+    local newivocab = {}
+    for i=1,max_input_length do
+      newivocab[i] = ivocab[i]
+    end
+    ivocab = newivocab
+--    ivocab[max_input_length + 1] = nil
+    print('#ivocab', #ivocab)
+--    print('ivocab', ivocab)
+  end
 end
-local ivocab = vocabs.ivocab
-local vocab = vocabs.vocab
 
 local netParams = {inputSize=#ivocab, hiddenSizes=hiddenSizes, dropout=dropoutProb}
 local net, crit = makeNet(netParams)
@@ -144,7 +157,7 @@ print('net', net)
 print('crit', crit)
 
 print('#ivocab', #ivocab)
-
+--sys.exit(1)
 local batchInput = torch.Tensor(batchSize, #ivocab)
 if backend == 'cuda' then
   input = input:cuda()
@@ -183,6 +196,9 @@ local it = 1
 local epoch = 1
 --local it = 1
 local itsPerEpoch = math.floor(input:size(1) / seqLength)
+if itsPerEpoch < 1 then
+  error('seqlength cannot be smaller than input size')
+end
 local params = net:getParameters()
 net:training()
 net:backwardOnline()
@@ -199,8 +215,9 @@ while true do
   local inputString = ''
   local targetString = ''
   local outputString = ''
---  print('it', it, it % 10)
+--  print('epoch', epoch, 'itsPerEpoch', itsPerEpoch, 'it', it, it % 10)
   if (epoch * itsPerEpoch + it) % 50 == 0 then
+--  if true then
     print('it', it)
     printOutput = true
   end
@@ -221,13 +238,15 @@ while true do
     end
 
     batchInput:zero()
+--    print('scatter...')
     batchInput:scatter(2, bc2:reshape(batchSize, 1), 1)
+--    print('...scatter done')
 
     timer_update(timer, 'forward run')
     local batchOutput = net:forward(batchInput)
     if printOutput then
-      print('batchInput', batchInput:narrow(2,1,5):reshape(1,5))
-      print('batchOutput:exp()', batchOutput:exp():narrow(2,1,5):reshape(1,5))
+      print('batchInput', batchInput:narrow(2,1,seqLength):reshape(1,seqLength))
+      print('batchOutput:exp()', batchOutput:exp():narrow(2,1,seqLength):reshape(1,seqLength))
       local label = getLabel(batchOutput[1])
       outputString = outputString .. string.char(ivocab[label])
     end
@@ -240,20 +259,22 @@ while true do
     local targetOffset = (epochOffset + (it - 1) * seqLength + (s - 1) + 1 + 1 - 1) % input_len + 1
     local bt2 = inputStriped[targetOffset]
 
-    if printOutput then
---      print('targetOffset', targetOffset)
---      print('bt2', bt2)
-      local thisCharCode = bt2[1]
-      local thisChar = string.char(ivocab[thisCharCode])
---      print('thisChar', thisChar)
-      targetString = thisChar .. targetString
-    end
 
     timer_update(timer, 'backward run')
     local batchLoss = crit:forward(batchOutputs[s], bt2)
     seqLoss = seqLoss + batchLoss
     local batchGradOutput = crit:backward(batchOutputs[s], bt2)
     net:backward(batchInputs[s], batchGradOutput)
+    if printOutput then
+--      print('targetOffset', targetOffset)
+      print('bt2', bt2)
+      local thisCharCode = bt2[1]
+      local thisChar = string.char(ivocab[thisCharCode])
+--      print('thisChar', thisChar)
+      targetString = thisChar .. targetString
+      print('batchLoss', batchLoss)
+      print('batchGradOutput', batchGradOutput)
+    end
   end
   timer_update(timer, 'end')
 

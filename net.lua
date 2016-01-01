@@ -8,6 +8,7 @@ function makeNet(params)
 
   local net = nn.Sequential()
   local thisInputSize = inputSize
+  print('hiddenSizes', hiddenSizes)
   for i, hiddenSize in ipairs(hiddenSizes) do
     net:add(nn.FastLSTM(thisInputSize, hiddenSize))
     if dropout ~= nil then
