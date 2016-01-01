@@ -162,6 +162,7 @@ print('#ivocab', #ivocab)
 
 local batchInputs = {}
 local batchOutputs = {}
+local batchOffsets = {}
 
 --local batchInput = torch.Tensor(batchSize, #ivocab)
 for s=1,seqLength do
@@ -256,12 +257,12 @@ end
 
 function doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)
   if debugState.printOutput then
-    print('batchTarget', batchTarget)
+--    print('batchTarget', batchTarget)
     local thisCharCode = batchTarget[1]
     local thisChar = string.char(ivocab[thisCharCode])
     debugState.targetString = thisChar .. debugState.targetString
     print('batchLoss', batchLoss)
-    print('batchGradOutput', batchGradOutput)
+--    print('batchGradOutput', batchGradOutput)
   end
 end
 
@@ -294,23 +295,22 @@ while true do
 --  print('epoch', epoch, 'itsPerEpoch', itsPerEpoch, 'it', it, it % 10)
   if (epoch * itsPerEpoch + it) % 50 == 0 then
 --  if true then
+    print('======================')
     print('it', it)
     debugState.printOutput = true
   end
   local epochOffset = epoch - 1
   epochOffset = 0
   if opt.backprop == 'online' then
-    batchOffsets = {}
 
     net:forget()
     net:zeroGradParameters()
     net:backwardOnline()
     for s=1,seqLength do
-      local batchOffset = lua_modulus(epochOffset + (it - 1) * seqLength + (s - 1) + 1, input_len)
-      batchOffsets[s] = batchOffset
+      batchOffsets[s] = lua_modulus(epochOffset + (it - 1) * seqLength + (s - 1) + 1, input_len)
 
       timer_update(timer, 'forward setup')
-      populateBatchInput(batchOffset, debugState, inputStriped, batchInputs[s])
+      populateBatchInput(batchOffsets[s], debugState, inputStriped, batchInputs[s])
 
       timer_update(timer, 'forward run')
       local batchOutput = net:forward(batchInputs[s])
@@ -322,7 +322,6 @@ while true do
 
     for s=seqLength,1,-1 do
       timer_update(timer, 'backward setup')
-      local targetOffset = (batchOffsets[s] + 1 - 1) % input_len + 1
       local targetOffset = lua_modulus(batchOffsets[s] + 1, input_len)
       local batchTarget = makeBatchTarget(targetOffset, debugState, inputStriped)
 
@@ -330,6 +329,12 @@ while true do
       local batchLoss = crit:forward(batchOutputs[s], batchTarget)
       local batchGradOutput = crit:backward(batchOutputs[s], batchTarget)
       net:backward(batchInputs[s], batchGradOutput)
+
+--      if debugState.printOutput then
+--        print('batchInputs[s]', batchInputs[s])
+--        print('batchTarget', batchTarget)
+--        print('batchGradOutput', batchGradOutput)
+--      end
 
       seqLoss = seqLoss + batchLoss
       doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)

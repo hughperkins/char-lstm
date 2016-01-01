@@ -1,5 +1,5 @@
 print('profile debug1 enabled')
-opt.len = 8
-opt.seq = 8
-opt.hidden = '64,64'
+opt.len = 4
+opt.seq = 4
+opt.hidden = ''
 
