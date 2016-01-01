@@ -38,6 +38,7 @@ cmd:option('-hidden', '128,128', 'size of hidden layers, comma-separated, one pe
 cmd:option('-drop',0 , 'dropout probability')
 cmd:option('-lr',0.1, 'learning rate')
 cmd:option('-profile', '', 'options file, written in lua')
+cmd:option('-backprop','online', '(maintainers only) online|throughtime|noseq')
 cmd:text()
 
 opt = cmd:parse(arg)
@@ -192,6 +193,44 @@ function getLabel(vector)
   return label[1]
 end
 
+function populateBatchInput(batchOffset, debugState, inputStriped, batchInput)
+  local bc2 = inputStriped[batchOffset]
+
+  if debugState.printOutput then
+    local thisCharCode = bc2[1]
+    local thisChar = string.char(ivocab[thisCharCode])
+    debugState.inputString = debugState.inputString .. thisChar
+  end
+
+  batchInput:zero()
+  batchInput:scatter(2, bc2:reshape(batchSize, 1), 1)
+end
+
+function doOutputDebug(debugState, batchOutput)
+  if debugState.printOutput then
+--    print('batchInput', batchInput:narrow(2,1,seqLength):reshape(1,seqLength))
+    print('batchOutput:exp()', batchOutput:exp():narrow(2,1,debugState.seqLength):reshape(1, debugState.seqLength))
+    local label = getLabel(batchOutput[1])
+    debugState.outputString = debugState.outputString .. string.char(debugState.ivocab[label])
+  end
+end
+
+function doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)
+  if debugState.printOutput then
+    print('batchTarget', batchTarget)
+    local thisCharCode = batchTarget[1]
+    local thisChar = string.char(ivocab[thisCharCode])
+    debugState.targetString = thisChar .. debugState.targetString
+    print('batchLoss', batchLoss)
+    print('batchGradOutput', batchGradOutput)
+  end
+end
+
+function makeBatchTarget(targetOffset, debugState, inputStriped)
+  local batchTarget = inputStriped[targetOffset]
+  return batchTarget
+end
+
 local it = 1
 local epoch = 1
 --local it = 1
@@ -201,90 +240,103 @@ if itsPerEpoch < 1 then
 end
 local params = net:getParameters()
 net:training()
-net:backwardOnline()
 while true do
   sys.tic()
   local seqLoss = 0
-  net:forget()
-  net:zeroGradParameters()
-  batchInputs = {}
-  batchOutputs = {}
 
   local timer = timer_init()
-  local printOutput = false
-  local inputString = ''
-  local targetString = ''
-  local outputString = ''
+  local debugState = {}
+  debugState.printOutput = false
+  debugState.inputString = ''
+  debugState.targetString = ''
+  debugState.outputString = ''
+  debugState.seqLength = seqLength
+  debugState.ivocab = ivocab
 --  print('epoch', epoch, 'itsPerEpoch', itsPerEpoch, 'it', it, it % 10)
   if (epoch * itsPerEpoch + it) % 50 == 0 then
 --  if true then
     print('it', it)
-    printOutput = true
+    debugState.printOutput = true
   end
   local epochOffset = epoch - 1
   epochOffset = 0
-  for s=1,seqLength do
-    local batchOffset = (epochOffset + (it - 1) * seqLength + (s - 1) + 1 - 1) % input_len + 1
+  if opt.backprop == 'online' then
+    batchInputs = {}
+    batchOutputs = {}
+    batchOffsets = {}
 
-    timer_update(timer, 'forward setup')
-    local bc2 = inputStriped[batchOffset]
+    net:forget()
+    net:zeroGradParameters()
+    net:backwardOnline()
+    for s=1,seqLength do
+      local batchOffset = (epochOffset + (it - 1) * seqLength + (s - 1) + 1 - 1) % input_len + 1
+      batchOffsets[s] = batchOffset
 
-    if printOutput then
---      print('batchOffset', batchOffset)
-      local thisCharCode = bc2[1]
-      local thisChar = string.char(ivocab[thisCharCode])
---      print('thisChar', thisChar)
-      inputString = inputString .. thisChar
+      timer_update(timer, 'forward setup')
+      populateBatchInput(batchOffset, debugState, inputStriped, batchInput)
+
+      timer_update(timer, 'forward run')
+      local batchOutput = net:forward(batchInput)
+      batchInputs[s] = batchInput
+      batchOutputs[s] = batchOutput
+
+      doOutputDebug(debugState, batchOutput)
     end
 
-    batchInput:zero()
---    print('scatter...')
-    batchInput:scatter(2, bc2:reshape(batchSize, 1), 1)
---    print('...scatter done')
+    for s=seqLength,1,-1 do
+      timer_update(timer, 'backward setup')
+      local targetOffset = (batchOffsets[s] + 1 - 1) % input_len + 1
+      local batchTarget = makeBatchTarget(targetOffset, debugState, inputStriped)
 
-    timer_update(timer, 'forward run')
-    local batchOutput = net:forward(batchInput)
-    if printOutput then
-      print('batchInput', batchInput:narrow(2,1,seqLength):reshape(1,seqLength))
-      print('batchOutput:exp()', batchOutput:exp():narrow(2,1,seqLength):reshape(1,seqLength))
-      local label = getLabel(batchOutput[1])
-      outputString = outputString .. string.char(ivocab[label])
+      timer_update(timer, 'backward run')
+      local batchLoss = crit:forward(batchOutputs[s], batchTarget)
+      local batchGradOutput = crit:backward(batchOutputs[s], batchTarget)
+      net:backward(batchInputs[s], batchGradOutput)
+
+      seqLoss = seqLoss + batchLoss
+      doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)
     end
-    batchInputs[s] = batchInput
-    batchOutputs[s] = batchOutput
-  end
+    net:updateParameters(learningRate)
+  elseif opt.backprop == 'throughtime' then
+    error('not yet implemented')
+  elseif opt.backprop == 'noseq' then
+    for s=1,seqLength do
+      net:forget()
+      net:zeroGradParameters()
+      local batchOffset = (epochOffset + (it - 1) * seqLength + (s - 1) + 1 - 1) % input_len + 1
 
-  for s=seqLength,1,-1 do
-    timer_update(timer, 'backward setup')
-    local targetOffset = (epochOffset + (it - 1) * seqLength + (s - 1) + 1 + 1 - 1) % input_len + 1
-    local bt2 = inputStriped[targetOffset]
+      timer_update(timer, 'forward setup')
+      populateBatchInput(batchOffset, debugState, inputStriped, batchInput)
 
+      timer_update(timer, 'backward setup')
 
-    timer_update(timer, 'backward run')
-    local batchLoss = crit:forward(batchOutputs[s], bt2)
-    seqLoss = seqLoss + batchLoss
-    local batchGradOutput = crit:backward(batchOutputs[s], bt2)
-    net:backward(batchInputs[s], batchGradOutput)
-    if printOutput then
---      print('targetOffset', targetOffset)
-      print('bt2', bt2)
-      local thisCharCode = bt2[1]
-      local thisChar = string.char(ivocab[thisCharCode])
---      print('thisChar', thisChar)
-      targetString = thisChar .. targetString
-      print('batchLoss', batchLoss)
-      print('batchGradOutput', batchGradOutput)
+      local targetOffset = (epochOffset + (it - 1) * seqLength + (s - 1) + 1 + 1 - 1) % input_len + 1
+      local batchTarget = makeBatchTarget(targetOffset, debugState, inputStriped)
+
+      timer_update(timer, 'forward run')
+      local batchOutput = net:forward(batchInput)
+      doOutputDebug(debugState, batchOutput)
+
+      timer_update(timer, 'backward run')
+      local batchLoss = crit:forward(batchOutput, batchTarget)
+
+      seqLoss = seqLoss + batchLoss
+      local batchGradOutput = crit:backward(batchOutput, batchTarget)
+      net:backward(batchInput, batchGradOutput)
+      doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)
+      net:updateParameters(learningRate)
     end
+  else
+    error('invalid opt.backprop value')
   end
   timer_update(timer, 'end')
 
-  net:updateParameters(learningRate)
-  if printOutput then
+  if debugState.printOutput then
 --    timer_dump(timer)
     print('params:narrow(1,1,seqLength)', params:narrow(1,1,seqLength):reshape(1,seqLength))
-    print('input ', inputString)
-    print('target', targetString)
-    print('output', outputString)
+    print('input ', debugState.inputString)
+    print('target', debugState.targetString)
+    print('output', debugState.outputString)
     print('epoch=' .. epoch, 'it=' .. it .. '/' .. itsPerEpoch, 'seqLoss=' .. seqLoss, 'time=' .. sys.toc())
   end
   if it ~= 1 and ((it - 1) % dumpIntervalIts == 0) then
