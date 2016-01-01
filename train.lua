@@ -159,18 +159,34 @@ print('crit', crit)
 
 print('#ivocab', #ivocab)
 --sys.exit(1)
-local batchInput = torch.Tensor(batchSize, #ivocab)
+
+local batchInputs = {}
+local batchOutputs = {}
+
+--local batchInput = torch.Tensor(batchSize, #ivocab)
+for s=1,seqLength do
+  batchInputs[s] = torch.FloatTensor(batchSize, #ivocab)
+  batchOutputs[s] = torch.FloatTensor(batchSize, #ivocab)
+end
 if backend == 'cuda' then
   input = input:cuda()
-  batchInput = batchInput:cuda()
+  for s=1,seqLength do
+    batchInputs[s] = batchInputs[s]:cuda()
+    batchOutputs[s] = batchOutputs[s]:cuda()
+  end
   net:cuda()
   crit:cuda()
 elseif backend == 'cl' then
   input = input:cl()
-  batchInput = batchInput:cl()
+  for s=1,seqLength do
+    batchInputs[s] = batchInputs[s]:cl()
+    batchOutputs[s] = batchOutputs[s]:cl()
+  end
   net:cl()
   crit:cl()
 else
+  net:float()
+  crit:float()
 end
 
 local input_len = input:size(1)
@@ -203,7 +219,11 @@ function populateBatchInput(batchOffset, debugState, inputStriped, batchInput)
   end
 
   batchInput:zero()
-  batchInput:scatter(2, bc2:reshape(batchSize, 1), 1)
+  if backend == 'cpu' then
+    batchInput:scatter(2, bc2:reshape(batchSize, 1):long(), 1)
+  else
+    batchInput:scatter(2, bc2:reshape(batchSize, 1), 1)
+  end
 end
 
 function doOutputDebug(debugState, batchOutput)
@@ -261,8 +281,6 @@ while true do
   local epochOffset = epoch - 1
   epochOffset = 0
   if opt.backprop == 'online' then
-    batchInputs = {}
-    batchOutputs = {}
     batchOffsets = {}
 
     net:forget()
@@ -273,12 +291,12 @@ while true do
       batchOffsets[s] = batchOffset
 
       timer_update(timer, 'forward setup')
-      populateBatchInput(batchOffset, debugState, inputStriped, batchInput)
+      populateBatchInput(batchOffset, debugState, inputStriped, batchInputs[s])
 
       timer_update(timer, 'forward run')
-      local batchOutput = net:forward(batchInput)
-      batchInputs[s] = batchInput
-      batchOutputs[s] = batchOutput
+      local batchOutput = net:forward(batchInputs[s])
+--      batchInputs[s] = batchInput
+      batchOutputs[s]:copy(batchOutput)
 
       doOutputDebug(debugState, batchOutput)
     end
@@ -307,19 +325,22 @@ while true do
       local targetOffset = (batchOffset + 1 - 1) % input_len + 1
 
       timer_update(timer, 'forward setup')
-      populateBatchInput(batchOffset, debugState, inputStriped, batchInput)
+      populateBatchInput(batchOffset, debugState, inputStriped, batchInputs[s])
 
       timer_update(timer, 'backward setup')
       local batchTarget = makeBatchTarget(targetOffset, debugState, inputStriped)
 
       timer_update(timer, 'forward run')
-      local batchOutput = net:forward(batchInput)
+      local batchOutput = net:forward(batchInputs[s])
       doOutputDebug(debugState, batchOutput)
 
       timer_update(timer, 'backward run')
       local batchLoss = crit:forward(batchOutput, batchTarget)
       local batchGradOutput = crit:backward(batchOutput, batchTarget)
-      net:backward(batchInput, batchGradOutput)
+      net:backward(batchInputs[s], batchGradOutput)
+      if debugState.printOutput then
+        
+      end
       net:updateParameters(learningRate)
 
       seqLoss = seqLoss + batchLoss
