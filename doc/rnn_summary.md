@@ -9,7 +9,9 @@ Emphasis is on finding out enough to get char-rnn-er working :-)  Everything els
 - Training pairs of input/output values using normal non-rnn training works ok
 - But training multiple pairs at a time, using backwardsonline, fails to train the last pair of each sequence for some reason
 
-## What happens in absence of rnn?
+## Process flow
+
+### In absence of rnn
 
 - we have a network, in this case an nn.Sequential
   - contains an nn.Linear and an nn.LogSoftMax
@@ -40,8 +42,26 @@ Emphasis is on finding out enough to get char-rnn-er working :-)  Everything els
     => Linear[Module]:updateParameters  (updates weights, bias)
 ```
 
-## Class hierarchies
+### Using backwardsonline
 
+- training looks like:
+```
+net:train()
+net:forget()
+net:backwardsonline()
+for s=1,seqLength do
+  outputs[s] = net:forward(inputs[s])
+end
+for s=seqLength,1,-1 do
+  -- (get gradOutput from criteria, based on inputs[s] and targets[s]; invariant with non-rnn case, so we ignore it here)
+  net:backward(inputs[s], gradOutputs[s])
+end
+net:updateParameters(learningRate)
+```
+
+First question: where did `backwardsoneline()` come from?  It was not on `Sequential` class initially.  Must be added during rnn init.lua somehow/somewhere?
+
+## Class hierarchies
 
 ### nn
 ```
