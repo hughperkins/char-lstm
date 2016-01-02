@@ -28,40 +28,40 @@ Linear                   => Module
 LogSoftMax               => Module
 
 Sequential:
-  updateOutput => modules:updateOutput
-  updateGradInput => modules:updateGradInput
-  accUpdateGradParameters => modules:accUpdateGradParameters
-  accGradparameters => modules:accGradParameters
-  backward => modules:backward
+  updateOutput            modules:updateOutput
+  updateGradInput         modules:updateGradInput
+  accUpdateGradParameters modules:accUpdateGradParameters
+  accGradparameters       modules:accGradParameters
+  backward                modules:backward
 
 Container:
-  zeroGradParameters modules:zeroGradParameters
-  updateParameters modules:updateParameters
-  parameters concatenate modules:parameters
-  training modules:training
-  evaluate modules:evaluate
+  zeroGradParameters      modules:zeroGradParameters
+  updateParameters        modules:updateParameters
+  parameters              concatenate modules:parameters
+  training                modules:training
+  evaluate                modules:evaluate
   applyToModules
 
 Module:
-  updateOutput return self.output
-  updateGradInput return self.gradInput
-  accGradParameters nothing
+  updateOutput            return self.output
+  updateGradInput         return self.gradInput
+  accGradParameters       nothing
   accUpdateGradParameters self:accGradParameters
-  forward  self:updateOutput
-  backward self:updateGradInput, self:accGradParameters
-  backwardUpdate  self:updateGradInput, self:accUpdateGradParameters
-  zeroGradParameters zeros parameters()
-  updateParameters  adds learningrate * self.parameters()[2] to parameters()[1]
-  training self.train = true
-  evaluate self.train = false
-  clone   clone, via serialize to memory file
-  flatten  flattens all parameters from self and children into single storage
+  forward                 self:updateOutput
+  backward                self:updateGradInput, self:accGradParameters
+  backwardUpdate          self:updateGradInput, self:accUpdateGradParameters
+  zeroGradParameters      zeros parameters()
+  updateParameters        adds learningrate * self.parameters()[2] to parameters()[1]
+  training                self.train = true
+  evaluate                self.train = false
+  clone                   clone, via serialize to memory file
+  flatten                 flattens all parameters from self and children into single storage
   getParameters
 
 Linear:
-  updateOutput  calc output
-  updateGradInput  calc gradInput
-  addGradParameters  calc gradWeight, gradBias
+  updateOutput            calc output
+  updateGradInput         calc gradInput
+  addGradParameters       calc gradWeight, gradBias
 
 LogSoftMax:
   updateOutput
