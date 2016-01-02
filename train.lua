@@ -194,14 +194,14 @@ local input_len = input:size(1)
 print('input_len', input_len)
 
 local batchSpacing = math.ceil(input_len / batchSize)
-print('batchSpacing', batchSpacing)
+--print('batchSpacing', batchSpacing)
 local inputDouble = input:clone():resize(2, input_len)
 inputDouble[1]:copy(input)
 inputDouble[2]:copy(input)
 inputDouble = inputDouble:reshape(input_len * 2)
 local inputStriped = inputDouble:unfold(1, input_len, batchSpacing):t()
 inputStriped:resize(input_len, batchSize)
-print('inputStriped', inputStriped)
+--print('inputStriped', inputStriped)
 
 function getLabel(vector)
   -- assumes a single 1-d vector of probabilities
@@ -317,7 +317,7 @@ while true do
 --      batchInputs[s] = batchInput
       batchOutputs[s]:copy(batchOutput)
 
-      doOutputDebug(debugState, batchOutput)
+--      doOutputDebug(debugState, batchOutput)
     end
 
     for s=seqLength,1,-1 do
@@ -337,7 +337,7 @@ while true do
 --      end
 
       seqLoss = seqLoss + batchLoss
-      doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)
+--      doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)
     end
     net:updateParameters(learningRate)
   elseif opt.backprop == 'throughtime' then
@@ -359,7 +359,7 @@ while true do
 --      batchInputs[s] = batchInput
       batchOutputs[s]:copy(batchOutput)
 
-      doOutputDebug(debugState, batchOutput)
+--      doOutputDebug(debugState, batchOutput)
 --    end
 
 --    for s=seqLength,1,-1 do
@@ -379,7 +379,7 @@ while true do
 --      end
 
       seqLoss = seqLoss + batchLoss
-      doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)
+--      doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)
     end
     net:backwardThroughTime()
     net:updateParameters(learningRate)
@@ -398,7 +398,7 @@ while true do
 
       timer_update(timer, 'forward run')
       local batchOutput = net:forward(batchInputs[s])
-      doOutputDebug(debugState, batchOutput)
+--      doOutputDebug(debugState, batchOutput)
 
       timer_update(timer, 'backward run')
       local batchLoss = crit:forward(batchOutput, batchTarget)
@@ -410,7 +410,7 @@ while true do
       net:updateParameters(learningRate)
 
       seqLoss = seqLoss + batchLoss
-      doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)
+--      doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)
     end
   else
     error('invalid opt.backprop value')
@@ -419,10 +419,10 @@ while true do
 
   if debugState.printOutput then
 --    timer_dump(timer)
-    print('params:narrow(1,1,seqLength)', params:narrow(1,1,seqLength):reshape(1,seqLength))
-    print('input ', debugState.inputString)
-    print('target', debugState.targetString)
-    print('output', debugState.outputString)
+--    print('params:narrow(1,1,seqLength)', params:narrow(1,1,seqLength):reshape(1,seqLength))
+--    print('input ', debugState.inputString)
+--    print('target', debugState.targetString)
+--    print('output', debugState.outputString)
     print('epoch=' .. epoch, 'it=' .. it .. '/' .. itsPerEpoch, 'seqLoss=' .. seqLoss, 'time=' .. sys.toc())
   end
   if it ~= 1 and ((it - 1) % dumpIntervalIts == 0) then

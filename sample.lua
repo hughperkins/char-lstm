@@ -24,13 +24,14 @@ cmd:text()
 cmd:text('Options')
 cmd:argument('-model','model checkpoint to use for sampling')
 cmd:option('-backend', 'cuda', 'cpu|cuda|cl')
-cmd:option('-length', 2000, 'number of characters to sample')
-cmd:option('-temperature', 1, 'temperature of sampling')
+cmd:option('-len', 2000, 'number of characters to sample')
+cmd:option('-temp', 1, 'temperature of sampling')
 cmd:text()
 
 opt = cmd:parse(arg)
 
 local data_file = opt.model
+local temperature = opt.temp
 
 local data = torch.load(data_file)
 local dataset = data.dataset
@@ -95,12 +96,12 @@ local newLineCode = newLine:byte(1)
 local prevChar = vocab[newLineCode]
 net:evaluate()
 local sample = ''
-for i=1,opt.length do
+for i=1,opt.len do
   local output = net:forward(identity[prevChar])
   local outputexp = output:clone():exp()
 --  print('outputexp', outputexp)
 --  print('outputexp:sum()', outputexp:sum())
-  local thisChar = sampleSoftMax(output, opt.temperature)
+  local thisChar = sampleSoftMax(output, temperature)
 --  print('thisChar', thisChar, 'torch.type(thisChar[1])', torch.type(thisChar[1]))
 --  print('thisChar', thisChar)
 --  print('ivocab[thisChar]', ivocab[thisChar[1]])
