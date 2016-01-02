@@ -7,6 +7,9 @@ What this does, and the way it works, is closely based on how Karpathy's https:/
 
 Draft, not yet fully working
 
+Update:
+- both training and sampling are implemented now, but seems to be some critical bug in training for some reason.  I'm working on this :-)
+
 ## Differences from original char-rnn
 
 * uses Element Research's rnn modules
@@ -36,7 +39,10 @@ th train.lua
 
 ### Sampling
 
-Not implemented yet :-)
+eg:
+```
+th sample.lua out/weights_tinyshakespeare_1_501.t7
+```
 
 ## Naming
 
