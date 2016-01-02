@@ -18,10 +18,32 @@ Emphasis is on finding out enough to get char-rnn-er working :-)  Everything els
   - (get gradOutput from criterion; criterion usage doesnt change between backwardsonline or non-rnn usage, so we assume it works correctly)
   - net:backward(input, gradOutput)
   - net:updateParameters(learningRate)
-- net:forward will call 
+- net:forward will do:
+```
+   Sequential[Module]:forward  (notation: lowest-level class [class containing method]:method name)
+   => Sequential[Sequential]:updateOutput
+     => Linear[Linear]:updateOutput (calcs output)
+     => LogSoftMax[LogSoftMax]:update Output (calcs output)
+```
+- net:backward will do:
+```
+  Sequential[Module]:backward
+  => Sequential[Sequential]:updateGradInput
+    => LogSoftMax[LogSoftMax]:updateGradInput (calc gradInput)
+    => Linear[Linear]:updateGradInput (calc gradInput)
+  => Sequential[Sequential]:accGradParameters
+    => Linear[Linear]:accGradPararameters (calc gradWeight, gradBias)
+```
+- netUpdateParameters(learningRate) will do:
+```
+  Sequential[Container]:updateParameters
+    => Linear[Module]:updateParameters  (updates weights, bias)
+```
 
 ## Class hierarchies
 
+
+### nn
 ```
 Sequential => Container  => Module
 Linear                   => Module
@@ -67,4 +89,10 @@ LogSoftMax:
   updateOutput
   updateGradInput 
 ```
+
+### rnn
+
+```
+```
+
 
