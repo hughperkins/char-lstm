@@ -15,7 +15,7 @@ Update:
 * uses Element Research's rnn modules
 * weights are stored as a FloatTensor, rather than CudaTensor etc
 * can train using any of cuda/cl/cpu, and sample using the same, or different, up to you
-* the sequences used to train each epoch are offset by 1 character from the previous epoch, which hopefully reduces over-training / increases sequence learning
+* the sequences used to train each epoch are offset by 1 character from the previous epoch, which hopefully will improve generalization
 * each thread is exposed to the entire training set, rather than a 1/batchSize portion of it, which hopefully means can use really large batch sizes, for speed of execution
 
 ## Does it support cuda and OpenCL?
