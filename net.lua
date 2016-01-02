@@ -20,7 +20,10 @@ function makeNet(params)
   net:add(nn.Linear(thisInputSize, inputSize))
   net:add(nn.LogSoftMax())
 
+  local recursor = nn.Recursor(net)
+
   local crit = nn.ClassNLLCriterion()
-  return net, crit
+--  return net, crit
+  return recursor, crit
 end
 

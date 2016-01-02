@@ -112,7 +112,21 @@ LogSoftMax:
 
 ### rnn
 
+Adds some methods to existing `nn` classes:
 ```
+Module:
+  forget                  modules:forget
+  remember                modules:remember
+  backwardThroughTime     modules:backwardThroughTime
+  backwardOnline          modules:backwardOnline
+  maxBPTTstep             modules:maxBPTTstep
+  stepClone
+```
+
+New classes:
+```
+Recursor => AbstractRecurrent => Container => Module
+Sequencer => AbstractSequencer => Container => Module
 ```
 
 
