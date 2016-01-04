@@ -7,13 +7,16 @@ What this does, and the way it works, is closely based on how Karpathy's https:/
 
 Draft, not yet fully working
 
+Update:
+- both training and sampling are implemented now, but seems to be some critical bug in training for some reason.  I'm working on this :-)
+
 ## Differences from original char-rnn
 
 * uses Element Research's rnn modules
 * weights are stored as a FloatTensor, rather than CudaTensor etc
 * can train using any of cuda/cl/cpu, and sample using the same, or different, up to you
-* the sequences used to train each epoch are offset by 1 character from the previous epoch, which hopefully reduces over-training / increases sequence learning
-* each thread is exposed to the entire training set, rather than a 1/batchSize portion of it, which hopefully means can use really large batch sizes, for speed of execution, without affecting how much learning takes place for each thread/sequence pair
+* the sequences used to train each epoch are offset by 1 character from the previous epoch, which hopefully will improve generalization
+* each thread is exposed to the entire training set, rather than a 1/batchSize portion of it, which hopefully means can use really large batch sizes, for speed of execution
 
 ## Does it support cuda and OpenCL?
 
@@ -36,7 +39,10 @@ th train.lua
 
 ### Sampling
 
-Not implemented yet :-)
+eg:
+```
+th sample.lua out/weights_tinyshakespeare_1_501.t7
+```
 
 ## Naming
 
