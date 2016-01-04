@@ -130,6 +130,9 @@ local net, crit = makeNet(netParams)
 print('net', net)
 print('crit', crit)
 
+net2 = nn.Sequencer(net)
+crit2 = nn.SequencerCriterion(crit)
+
 print('#ivocab', #ivocab)
 
 local batchInput = torch.Tensor(batchSize, #ivocab)
@@ -179,6 +182,7 @@ while true do
     batchInput:scatter(2, bc2:reshape(batchSize, 1), 1)
 
     timer_update(timer, 'forward run')
+    os.exit()
     local batchOutput = net:forward(batchInput)
     batchInputs[s] = batchInput
     batchOutputs[s] = batchOutput
