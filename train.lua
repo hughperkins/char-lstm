@@ -37,11 +37,14 @@ cmd:option('-data','tinyshakespeare','name of data directory. Should contain the
 cmd:option('-back','cuda','cpu|cuda|cl')
 cmd:option('-len', -1, 'only use this many characters from input data. -1 for all data')
 cmd:option('-seq', 50, 'sequence length to use')
+cmd:option('-dump', 100, 'iterations between writing out weights')
 cmd:option('-hidden', '128,128', 'size of hidden layers, comma-separated, one per required hidden layer')
 cmd:option('-drop',0 , 'dropout probability')
+cmd:option('-batch',1 , 'batch size (should default to 50 probably)')
 cmd:option('-lr',0.1, 'learning rate')
 cmd:option('-profile', '', 'options file, written in lua')
 cmd:option('-backprop','online', '(maintainers only) online|throughtime|noseq')
+cmd:option('-maxepochs', -1, 'maximum epochs to train; -1 for no limit')
 cmd:text()
 
 opt = cmd:parse(arg)
@@ -70,8 +73,8 @@ local dropoutProb = opt.dropout
 local hiddenSizes = opt.hidden:split(',')
 local learningRate = opt.lr
 local seqLength = opt.seq
-local batchSize = 1
-local dumpIntervalIts = 100
+local batchSize = opt.batc
+local dumpIntervalIts = opt.dump
 local max_input_length = opt.len
 
 local outDir = 'out'
@@ -213,7 +216,7 @@ if itsPerEpoch < 1 then
 end
 local params = net:getParameters()
 net:training()
-while true do
+while opt.maxepochs <= 0 or it <= opt.maxepochs do
   sys.tic()
   local seqLoss = 0
 
