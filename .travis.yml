@@ -11,7 +11,7 @@ before_install:
   - BUILD_DIR=$PWD
   - which stat
   - stat --help
-  - stat -L --format=%s train.lua
+  - stat --format=%s train.lua
   - whoami
   - pwd
   - ls
