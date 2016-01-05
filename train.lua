@@ -368,6 +368,7 @@ while opt.maxepochs <= 0 or epoch <= opt.maxepochs do
     data.netParams = netParams
     data.weights = params:float()
     data.backend = backend
+    data.vocabSize = #ivocab
     torch.save(outDir .. '/' .. filename, data) 
   end
   it = it + 1

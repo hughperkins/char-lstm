@@ -48,7 +48,7 @@ print('loaded input')
 local ivocab = vocabs.ivocab
 local vocab = vocabs.vocab
 
-local identity = torch.eye(#ivocab)
+local identity = torch.eye(data.vocabSize)
 
 --local backend = data.backend
 local backend = opt.back
