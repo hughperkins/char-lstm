@@ -22,7 +22,6 @@ require 'rnn'
 
 -- local files
 require 'util/timer'
-require 'util/file_helper'
 require 'net'
 require 'shared'
 require 'data'
@@ -216,7 +215,7 @@ if itsPerEpoch < 1 then
 end
 local params = net:getParameters()
 net:training()
-while opt.maxepochs <= 0 or it <= opt.maxepochs do
+while opt.maxepochs <= 0 or epoch <= opt.maxepochs do
   sys.tic()
   local seqLoss = 0
 
@@ -228,11 +227,12 @@ while opt.maxepochs <= 0 or it <= opt.maxepochs do
   debugState.outputString = ''
   debugState.seqLength = seqLength
   debugState.ivocab = ivocab
+  local globalIt = epoch * itsPerEpoch + it
 --  print('epoch', epoch, 'itsPerEpoch', itsPerEpoch, 'it', it, it % 10)
-  if (epoch * itsPerEpoch + it) % 50 == 0 then
+  if globalIt % 50 == 0 then
 --  if true then
     print('======================')
-    print('it', it)
+    print('globalIt', globalIt, 'epoch', epoch, 'it', it)
     debugState.printOutput = true
   end
   local epochOffset = epoch - 1
@@ -360,7 +360,7 @@ while opt.maxepochs <= 0 or it <= opt.maxepochs do
 --    print('output', debugState.outputString)
     print('epoch=' .. epoch, 'it=' .. it .. '/' .. itsPerEpoch, 'seqLoss=' .. seqLoss, 'time=' .. sys.toc())
   end
-  if it ~= 1 and ((it - 1) % dumpIntervalIts == 0) then
+  if globalIt ~= 1 and ((globalIt - 1) % dumpIntervalIts == 0) then
     local filename = weights_t7:gsub('$DATASET', dataset):gsub('$EPOCH', epoch):gsub('$IT', it)
     print('filename', filename)
     local data = {}

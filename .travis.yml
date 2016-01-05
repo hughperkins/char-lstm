@@ -43,7 +43,8 @@ before_install:
 
 script:
   - source ~/torch/install/bin/torch-activate
-  - luajit train.lua -maxepochs 3 -len 200 -back cpu
+  - luajit train.lua -maxepochs 8 -len 48 -seq 4 -back cpu
+  - # luajit sample.lua -back cpu -len 40 out/weights_tinyshakespeare_8_5.t7
 
 notifications:
   email:

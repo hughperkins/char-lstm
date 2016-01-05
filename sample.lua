@@ -23,7 +23,7 @@ cmd:text('Sample from a character-level language model')
 cmd:text()
 cmd:text('Options')
 cmd:argument('-model','model checkpoint to use for sampling')
-cmd:option('-backend', 'cuda', 'cpu|cuda|cl')
+cmd:option('-back', 'cuda', 'cpu|cuda|cl')
 cmd:option('-len', 2000, 'number of characters to sample')
 cmd:option('-temp', 1, 'temperature of sampling')
 cmd:text()
@@ -51,7 +51,7 @@ local vocab = vocabs.vocab
 local identity = torch.eye(#ivocab)
 
 --local backend = data.backend
-local backend = opt.backend
+local backend = opt.back
 print('backend', backend)
 if backend == 'cuda' then
   require 'cunn'

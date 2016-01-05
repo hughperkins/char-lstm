@@ -3,13 +3,14 @@ require 'os'
 require 'paths'
 require 'torch'
 require 'sys'
-require 'util/file_helper'
 require 'shared'
+local lfs = require "lfs"
 
 -- shamelessly adapted from Karpathy's char-rnn :-)
 function text_to_t7(in_textfile, out_tensorfile, out_vocabfile)
   local cache_len = 10000
   local rawdata
+  local tot_len = lfs.attributes (filePath, "size")
   local tot_len = getFileSize(in_textfile)
   print('tot_len', tot_len)
 
