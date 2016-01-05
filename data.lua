@@ -64,7 +64,7 @@ function loadTextFile(dataDir)
   return vocabs, ivocab, vocab, input
 end
 
-function truncateVocab(ivocab, max_input_length)
+function truncateVocab(input, ivocab, max_input_length)
   if max_input_length > 0 then
     print('max_input_length', max_input_length)
     input:resize(max_input_length)

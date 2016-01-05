@@ -73,7 +73,7 @@ local dropoutProb = opt.dropout
 local hiddenSizes = opt.hidden:split(',')
 local learningRate = opt.lr
 local seqLength = opt.seq
-local batchSize = opt.batc
+local batchSize = opt.batch
 local dumpIntervalIts = opt.dump
 local max_input_length = opt.len
 
@@ -87,7 +87,7 @@ local vocabs, ivocab, vocab, input = loadTextFile(dataDir)
 
 print('loaded input')
 
-ivocab = truncateVocab(ivocab, max_input_length)
+ivocab = truncateVocab(input, ivocab, max_input_length)
 
 print('#ivocab', #ivocab)
 
