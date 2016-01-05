@@ -19,10 +19,13 @@ require 'torch'
 require 'sys'
 require 'nn'
 require 'rnn'
+
+-- local files
 require 'util/timer'
 require 'util/file_helper'
 require 'net'
 require 'shared'
+require 'data'
 
 cmd = torch.CmdLine()
 cmd:text()
@@ -49,9 +52,6 @@ if opt.profile ~= '' then
 end
 
 local backend = opt.back
---local backend = 'cuda'
---backend = 'cl'
---backend = 'cpu'
 
 if backend == 'cuda' then
   require 'cutorch'
@@ -76,81 +76,17 @@ local max_input_length = opt.len
 
 local outDir = 'out'
 
--- shamelessly adapted from Karpathy's char-rnn :-)
-function text_to_t7(in_textfile, out_tensorfile, out_vocabfile)
-  local cache_len = 10000
-  local rawdata
-  local tot_len = getFileSize(in_textfile)
-  print('tot_len', tot_len)
-
-  local input_coded = torch.ByteTensor(tot_len)
-  local vocab = {}
-  local ivocab = {}
-  local state = {}
-  state.vocab = vocab
-  state.ivocab = ivocab
-
---  -- add a null character, which will be used for start-of-sequence
---  ivocab[1] = 0
---  vocab[0] = 1
-
-  local f = io.open(in_textfile, "r")
-  local input_string = f:read(cache_len)
-  local pos = 1
-  repeat
-    local len = input_string:len()
-    for i=1,len do
-      local char = input_string:byte(i)
-      if vocab[char] == nil then
-        ivocab[#ivocab + 1] = char
-        vocab[char] = #ivocab
-      end
-      local v = vocab[char]
-      input_coded[pos] = v
-      pos = pos + 1
-    end
-    input_string = f:read(cache_len)
-  until not input_string
-  f:close()
-
-  print('#ivocab', #ivocab)
-  local vocabs = {}
-  vocabs.vocab = vocab
-  vocabs.ivocab = ivocab
-  torch.save(out_vocabfile, vocabs)
-  torch.save(out_tensorfile, input_coded)
-end
-
 if not paths.dirp(outDir) then
   paths.mkdir(outDir)
 end
 
-if not paths.filep(dataDir .. '/' .. in_t7) or not paths.filep(dataDir .. '/' .. vocab_t7) then
-  text_to_t7(dataDir .. '/' .. in_file, dataDir .. '/' .. in_t7, dataDir .. '/' .. vocab_t7)
---  local f = io.open(dataDir + '/' + in_file, 'r')
-  
---  f:close()
-end
+local vocabs, ivocab, vocab, input = loadTextFile(dataDir) 
 
-local vocabs = torch.load(dataDir .. '/' .. vocab_t7)
-local ivocab = vocabs.ivocab
-local vocab = vocabs.vocab
-local input = torch.load(dataDir .. '/' .. in_t7)
 print('loaded input')
-if max_input_length > 0 then
-  print('max_input_length', max_input_length)
-  input:resize(max_input_length)
-  if max_input_length < #ivocab then
-    local newivocab = {}
-    for i=1,max_input_length do
-      newivocab[i] = ivocab[i]
-    end
-    ivocab = newivocab
---    ivocab[max_input_length + 1] = nil
-    print('#ivocab', #ivocab)
---    print('ivocab', ivocab)
-  end
-end
+
+ivocab = truncateVocab(ivocab, max_input_length)
+
+print('#ivocab', #ivocab)
 
 local netParams = {inputSize=#ivocab, hiddenSizes=hiddenSizes, dropout=dropoutProb}
 local net, crit = makeNet(netParams)
@@ -160,18 +96,15 @@ print('crit', crit)
 net2 = nn.Sequencer(net)
 crit2 = nn.SequencerCriterion(crit)
 
-print('#ivocab', #ivocab)
---sys.exit(1)
-
 local batchInputs = {}
 local batchOutputs = {}
 local batchOffsets = {}
 
---local batchInput = torch.Tensor(batchSize, #ivocab)
 for s=1,seqLength do
   batchInputs[s] = torch.FloatTensor(batchSize, #ivocab)
   batchOutputs[s] = torch.FloatTensor(batchSize, #ivocab)
 end
+
 if backend == 'cuda' then
   input = input:cuda()
   for s=1,seqLength do
@@ -197,19 +130,16 @@ local input_len = input:size(1)
 print('input_len', input_len)
 
 local batchSpacing = math.ceil(input_len / batchSize)
---print('batchSpacing', batchSpacing)
-local inputDouble = input:clone():resize(2, input_len)
+local inputDouble = input.new():resize(2, input_len)
 inputDouble[1]:copy(input)
 inputDouble[2]:copy(input)
-inputDouble = inputDouble:reshape(input_len * 2)
+inputDouble:resize(input_len * 2)
 local inputStriped = inputDouble:unfold(1, input_len, batchSpacing):t()
 inputStriped:resize(input_len, batchSize)
---print('inputStriped', inputStriped)
 
 function getLabel(vector)
   -- assumes a single 1-d vector of probabilities
   local max, label = vector:max(1)
---  print('max', max, 'label', label)
   return label[1]
 end
 
