@@ -11,7 +11,7 @@ function makeNet(params)
   print('hiddenSizes', hiddenSizes)
   for i, hiddenSize in ipairs(hiddenSizes) do
     net:add(nn.FastLSTM(thisInputSize, hiddenSize))
-    if dropout ~= nil then
+    if dropout ~= nil and dropout > 0 then
       net:add(nn.Dropout(dropout))
     end
     thisInputSize = hiddenSize
