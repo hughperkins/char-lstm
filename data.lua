@@ -10,8 +10,7 @@ local lfs = require "lfs"
 function text_to_t7(in_textfile, out_tensorfile, out_vocabfile)
   local cache_len = 10000
   local rawdata
-  local tot_len = lfs.attributes (filePath, "size")
-  local tot_len = getFileSize(in_textfile)
+  local tot_len = lfs.attributes (in_textfile, "size")
   print('tot_len', tot_len)
 
   local input_coded = torch.ByteTensor(tot_len)
