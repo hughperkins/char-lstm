@@ -1,8 +1,8 @@
 require 'sys'
+local lfs = require "lfs"
 
 function getFileSize(filePath)
-  local sizestr = sys.execute('stat --format=%s ' .. filePath)
-  local size = tonumber(sizestr)
+  local size = lfs.attributes (filePath, "size")
   return size
 end
 

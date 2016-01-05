@@ -9,9 +9,6 @@ matrix:
 before_install:
   - if [ -f ".git/shallow" ]; then travis_retry git fetch --unshallow; fi
   - BUILD_DIR=$PWD
-  - which stat
-  - stat --help
-  - stat --format=%s train.lua
   - whoami
   - pwd
   - ls
