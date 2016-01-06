@@ -58,6 +58,7 @@ function CharTextLoader:__init(data_dir, batch_size, seq_length, split_fractions
     print('cutting off end of data so that the batches/sequences divide evenly')
     data = data:sub(1, batch_size * seq_length * math.floor(len / (batch_size * seq_length)))
   end
+  self.text_size = data:size(1)
 
   -- count vocab
   self.vocab_size = 0
