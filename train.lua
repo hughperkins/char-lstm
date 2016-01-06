@@ -20,6 +20,7 @@ require 'sys'
 require 'nn'
 require 'dpnn'
 require 'rnn'
+require 'optim'
 
 -- local files
 require 'util/timer'
@@ -40,8 +41,10 @@ cmd:option('-seq', 50, 'sequence length to use')
 cmd:option('-hidden', '128,128', 'size of hidden layers, comma-separated, one per required hidden layer')
 cmd:option('-drop', 0 , 'dropout probability')
 cmd:option('-batchsize', 50 , 'batch size')
-cmd:option('-lr', 0.1, 'learning rate')
-cmd:option('-mom', 0.9, 'momentum')
+cmd:option('-lr', 2e-3, 'learning rate')
+cmd:option('-lrdecay', 0.97, 'learning rate decay')
+cmd:option('-lrdecayafter', 10, 'in number of epochs, when to start decaying the learning rate')
+cmd:option('-decayrate', 0.95, 'decay rate for rmsprop')
 cmd:option('-clip', 5, 'max l2-norm of concatenation of all gradParam tensors')
 cmd:option('-train_frac',0.95,'fraction of data that goes into train set')
 cmd:option('-val_frac',0.05,'fraction of data that goes into validation set. test_frac will be computed as (1 - train_frac - val_frac)')
@@ -75,6 +78,7 @@ if not paths.dirp(opt.outdir) then
 end
 
 -- load data from file
+
 local dataDir = 'data/' .. opt.data
 local splitFrac = {opt.train_frac, opt.val_frac, nil}
 local loader = nn.CharTextLoader(dataDir, opt.batchsize, opt.seq, splitFrac)
@@ -84,6 +88,7 @@ print('nChar (total)', loader.text_size)
 print('nBatch (train/val/test)', loader.ntrain, loader.nval, loader.ntest)
 
 -- build model
+
 local net, crit = makeLSTM(loader.vocab_size, opt.hiddenSizes, opt.dropout, opt.back == 'cuda' or opt.back == 'cl')
 print('net', net)
 print('crit', crit)
@@ -99,7 +104,38 @@ else
   net:float(); crit:float()
 end
 
--- experiment log
+-- build function for propagating a batch
+
+local params, gradParams = net:getParameters()
+-- do fwd/bwd and return loss, gradParams
+function feval(_params)
+  if _params ~= params then
+    params:copy(_params)
+  end
+  gradParams:zero()
+
+  -- get batch of sequences
+  -- input and target are each tensors of size seqLen x batchSize
+  local input, target = loader:next_batch(loader.TRAIN, true)
+
+  -- forward
+  local output = net:forward(input)
+  local err = crit:forward(output, target)
+  
+  -- backward
+  local gradOutput = crit:backward(output, target)
+  net:backward(input, gradOutput)
+  
+  -- clip gradients element-wise
+  if opt.clip > 0 then
+    gradParams:clamp(-opt.clip, opt.clip)
+  end
+  
+  return err, gradParams
+end
+
+-- setup experiment log
+
 -- is saved to file every time a new validation minima is found
 local xplog = {}
 xplog.opt = opt -- save all hyper-parameters and such
@@ -117,6 +153,7 @@ local ntrial = 0
 
 local epoch = 1
 opt.epochsize = opt.epochsize == -1 and loader.ntrain or opt.epochsize
+local optimstate = {learningRate = opt.lr, alpha = opt.decayrate}
 
 while opt.maxepoch <= 0 or epoch <= opt.maxepoch do
   print("")
@@ -128,42 +165,27 @@ while opt.maxepoch <= 0 or epoch <= opt.maxepoch do
   net:training()
   local a = torch.Timer()
   for i=1,opt.epochsize do
-    local timer = timer_init()
     
-    -- get batch of sequences
-    -- input and target are each tensors of size seqLen x batchSize
-    local input, target = loader:next_batch(loader.TRAIN, true)
-
-    -- forward
-    timer_update(timer, 'forward')
-    local output = net:forward(input)
-    local err = crit:forward(output, target)
-    sumErr = sumErr + err
-    
-    -- backward
-    timer_update(timer, 'backward')
-    local gradOutput = crit:backward(output, target)
-    net:zeroGradParameters()
-    net:backward(input, gradOutput)
-    
-    -- update
-    timer_update(timer, 'update')
-    if opt.clip > 0 then
-      local norm = net:gradParamClip(opt.clip) -- affects gradParams
-      opt.meanNorm = opt.meanNorm and (opt.meanNorm*0.9 + norm*0.1) or norm
-    end
-    --net:updateGradParameters(opt.mom) -- momentum : affects gradParams
-    net:updateParameters(opt.lr) -- affects params    
+    local _, err = optim.rmsprop(feval, params, optimstate)
+    sumErr = sumErr + err[1]
     
     if opt.progress then
       xlua.progress(i, opt.epochsize)
     end
     
-    timer_update(timer, 'end')
+    -- exponential learning rate decay
+    if i % loader.ntrain == 0 and opt.lrdecay < 1 then
+      if epoch >= opt.lrdecayafter then
+        local decayfactor = opt.lrdecay
+        optimstate.learningRate = optimstate.learningRate * decayfactor -- decay it
+        print('decayed learning rate by a factor ' .. decayfactor .. ' to ' .. optimstate.learningRate)
+      end
+    end
   end
   
-  local speed = a:time().real/(opt.seq*opt.epochsize)
-  print(string.format("Speed : %f sec/step (char-rnn : time/batch)", speed))
+  cutorch.synchronize()
+  local speed = a:time().real/opt.epochsize
+  print(string.format("Speed : %f time/batch ", speed))
   
   local nll = sumErr/(opt.epochsize*opt.seq)
   print("Training NLL : "..nll)
