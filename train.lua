@@ -55,6 +55,7 @@ cmd:text()
 
 local opt = cmd:parse(arg)
 opt.hiddenSizes = opt.hidden:split(',')
+opt.id = opt.data .. ':' .. os.uniqueid()
 
 if opt.profile ~= '' then
   print('profile', opt.profile)
@@ -83,25 +84,23 @@ print('nChar (total)', loader.text_size)
 print('nBatch (train/val/test)', loader.ntrain, loader.nval, loader.ntest)
 
 -- build model
-local net, crit = makeLSTM(loader.vocab_size, opt.hiddenSizes, opt.dropout)
+local net, crit = makeLSTM(loader.vocab_size, opt.hiddenSizes, opt.dropout, opt.back == 'cuda' or opt.back == 'cl')
 print('net', net)
 print('crit', crit)
-
-opt.id = opt.data .. ':' .. os.uniqueid()
 
 print("options")
 print(opt)
 
-if backend == 'cuda' then
+if opt.back == 'cuda' then
   net:cuda(); crit:cuda()
-elseif backend == 'cl' then
+elseif opt.back == 'cl' then
   net:cl(); crit:cl()
 else
   net:float(); crit:float()
 end
 
--- experiment log.
--- will be saved to file every time a new validation minima is found
+-- experiment log
+-- is saved to file every time a new validation minima is found
 local xplog = {}
 xplog.opt = opt -- save all hyper-parameters and such
 xplog.vocabSize = loader.vocab_size
@@ -127,6 +126,7 @@ while opt.maxepoch <= 0 or epoch <= opt.maxepoch do
   
   local sumErr = 0
   net:training()
+  local a = torch.Timer()
   for i=1,opt.epochsize do
     local timer = timer_init()
     
@@ -161,6 +161,9 @@ while opt.maxepoch <= 0 or epoch <= opt.maxepoch do
     
     timer_update(timer, 'end')
   end
+  
+  local speed = a:time().real/(opt.seq*opt.epochsize)
+  print(string.format("Speed : %f sec/step (char-rnn : time/batch)", speed))
   
   local nll = sumErr/(opt.epochsize*opt.seq)
   print("Training NLL : "..nll)

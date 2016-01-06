@@ -1,7 +1,7 @@
 require 'nn'
 require 'rnn'
 
-function makeLSTM(inputSize, hiddenSizes, dropout)
+function makeLSTM(inputSize, hiddenSizes, dropout, gpu)
   assert(nn.OneHot, "Please update dpnn : luarocks install dpnn")
 
   -- build core stack of LSTM + output layer.
@@ -27,10 +27,26 @@ function makeLSTM(inputSize, hiddenSizes, dropout)
   model:add(nn.OneHot(inputSize)) -- converts indices to onehot (dpnn).
   model:add(nn.SplitTable(1, 3)) -- splits sequence tensor into a table of tensors
   
-  model:add(nn.Sequencer(lstm))
+  local seq = nn.Sequencer(lstm)
+  -- remember hidden states between batches for both training and evaluation
+  seq:remember('both') 
+  model:add(seq)
+  
+  -- build criterion
 
-  -- target is also seqLen x batchSize
-  local crit = nn.SequencerCriterion(nn.ClassNLLCriterion(), nil, nn.SplitTable(1, 2))
+  -- target is also seqLen x batchSize.
+  local targetmodule = nn.SplitTable(1, 2)
+  if gpu then
+    targetmodule =nn.Sequential()
+    :add(nn.Convert())
+    :add(targetmodule)
+  end
+    
+  local crit = nn.ModuleCriterion(
+    nn.SequencerCriterion(nn.ClassNLLCriterion()), 
+    nil, 
+    targetmodule
+  )
   
   return model, crit
 end
