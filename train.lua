@@ -43,7 +43,7 @@ cmd:option('-batch',1 , 'batch size (should default to 50 probably)')
 cmd:option('-lr',0.1, 'learning rate')
 cmd:option('-profile', '', 'options file, written in lua')
 cmd:option('-backprop','online', '(maintainers only) online|throughtime|noseq')
-cmd:option('-maxepochs', -1, 'maximum epochs to train; -1 for no limit')
+cmd:option('-maxepoch', -1, 'maximum epochs to train; -1 for no limit')
 cmd:text()
 
 opt = cmd:parse(arg)
