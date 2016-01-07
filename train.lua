@@ -215,7 +215,7 @@ if itsPerEpoch < 1 then
 end
 local params = net:getParameters()
 net:training()
-while opt.maxepochs <= 0 or epoch <= opt.maxepochs do
+while opt.maxepoch <= 0 or epoch <= opt.maxepoch do
   sys.tic()
   local seqLoss = 0
 
