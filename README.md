@@ -1,4 +1,4 @@
-# char-rnn-er
+# char-lstm
 char-rnn, tweaked to use Element-Research rnn modules
 
 What this does, and the way it works, is closely based on how Karpathy's https://github.com/karpathy/char-rnn works, but tweaked to use Element Research's https://github.com/element-research/rnn modules instead.
