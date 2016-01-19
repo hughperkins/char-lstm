@@ -37,6 +37,7 @@ cmd:text('Options')
 -- data
 cmd:option('-data', 'tinyshakespeare', 'name of data directory. Should contain the file input.txt with input data')
 cmd:option('-back', 'cuda', 'cpu|cuda|cl')
+cmd:option('-device', 1, 'which GPU device to use')
 cmd:option('-seq', 50, 'sequence length to use')
 cmd:option('-hidden', '128,128', 'size of hidden layers, comma-separated, one per required hidden layer')
 cmd:option('-drop', 0 , 'dropout probability')
@@ -58,16 +59,18 @@ cmd:text()
 
 local opt = cmd:parse(arg)
 opt.hiddenSizes = opt.hidden:split(',')
-opt.id = opt.data .. ':' .. os.uniqueid()
-
 if opt.profile ~= '' then
   print('profile', opt.profile)
   opt = require(opt.profile)
 end
+opt.id = opt.data .. ':' .. os.uniqueid()
+
+nn.FastLSTM.usenngraph = true -- this provides a significant speedup
 
 if opt.back == 'cuda' then
   require 'cutorch'
   require 'cunn'
+  cutorch.setDevice(opt.device)
 elseif opt.back == 'cl' then
   require 'cltorch'
   require 'clnn'
@@ -107,6 +110,8 @@ end
 -- build function for propagating a batch
 
 local params, gradParams = net:getParameters()
+params:uniform(-0.08, 0.08) -- small uniform numbers
+
 -- do fwd/bwd and return loss, gradParams
 function feval(_params)
   if _params ~= params then
@@ -165,6 +170,7 @@ while opt.maxepoch <= 0 or epoch <= opt.maxepoch do
   net:training()
   local a = torch.Timer()
   for i=1,opt.epochsize do
+    local b = torch.Timer()
     
     local _, err = optim.rmsprop(feval, params, optimstate)
     sumErr = sumErr + err[1]
@@ -181,6 +187,9 @@ while opt.maxepoch <= 0 or epoch <= opt.maxepoch do
         print('decayed learning rate by a factor ' .. decayfactor .. ' to ' .. optimstate.learningRate)
       end
     end
+    
+    cutorch.synchronize()
+    print(string.format("train_loss = %6.8f, grad/param norm = %6.4e, time/batch = %.4fs", err[1]/opt.seq, gradParams:norm() / params:norm(), b:time().real))
   end
   
   cutorch.synchronize()
