@@ -170,7 +170,6 @@ while opt.maxepoch <= 0 or epoch <= opt.maxepoch do
   net:training()
   local a = torch.Timer()
   for i=1,opt.epochsize do
-    local b = torch.Timer()
     
     local _, err = optim.rmsprop(feval, params, optimstate)
     sumErr = sumErr + err[1]
@@ -187,9 +186,6 @@ while opt.maxepoch <= 0 or epoch <= opt.maxepoch do
         print('decayed learning rate by a factor ' .. decayfactor .. ' to ' .. optimstate.learningRate)
       end
     end
-    
-    cutorch.synchronize()
-    print(string.format("train_loss = %6.8f, grad/param norm = %6.4e, time/batch = %.4fs", err[1]/opt.seq, gradParams:norm() / params:norm(), b:time().real))
   end
   
   cutorch.synchronize()
