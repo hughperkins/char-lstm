@@ -41,7 +41,7 @@ cmd:option('-device', 1, 'which GPU device to use')
 cmd:option('-seq', 50, 'sequence length to use')
 cmd:option('-hidden', '128,128', 'size of hidden layers, comma-separated, one per required hidden layer')
 cmd:option('-drop', 0 , 'dropout probability')
-cmd:option('-batchsize', 50 , 'batch size')
+cmd:option('-batch', 50 , 'batch size')
 cmd:option('-lr', 2e-3, 'learning rate')
 cmd:option('-lrdecay', 0.97, 'learning rate decay')
 cmd:option('-lrdecayafter', 10, 'in number of epochs, when to start decaying the learning rate')
@@ -84,7 +84,7 @@ end
 
 local dataDir = 'data/' .. opt.data
 local splitFrac = {opt.train_frac, opt.val_frac, nil}
-local loader = nn.CharTextLoader(dataDir, opt.batchsize, opt.seq, splitFrac)
+local loader = nn.CharTextLoader(dataDir, opt.batch, opt.seq, splitFrac)
 local vocab_size = loader.vocab_size  -- the number of distinct characters
 print('#vocab', loader.vocab_size)
 print('nChar (total)', loader.text_size)
