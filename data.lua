@@ -21,13 +21,13 @@ function CharTextLoader:__init(data_dir, batch_size, seq_length, split_fractions
   -- train / val / test split for data, in fractions
   split_fractions[3] = split_fractions[3] or math.max(0, 1 - (split_fractions[1] + split_fractions[2]))
 
-  local input_file = path.join(data_dir, 'input.txt')
-  local vocab_file = path.join(data_dir, 'vocab.t7')
-  local tensor_file = path.join(data_dir, 'data.t7')
+  local input_file = paths.concat(data_dir, 'input.txt')
+  local vocab_file = paths.concat(data_dir, 'vocab.t7')
+  local tensor_file = paths.concat(data_dir, 'data.t7')
 
   -- fetch file attributes to determine if we need to rerun preprocessing
   local run_prepro = false
-  if not (path.exists(vocab_file) or path.exists(tensor_file)) then
+  if not (paths.filep(vocab_file) or paths.filep(tensor_file)) then
     -- prepro files do not exist, generate them
     print('vocab.t7 and data.t7 do not exist. Running preprocessing...')
     run_prepro = true
