@@ -54,6 +54,7 @@ cmd:option('-epochsize', -1, 'every how many iterations (batches) should we eval
 cmd:option('-maxepoch', -1, 'maximum epochs to train; -1 for no limit')
 cmd:option('-earlystop', 50, 'early-stop when the model cant find a new validation NLL minima for this many epochs')
 cmd:option('-outdir', 'out', 'name of output directory')
+cmd:option('-id', '', 'id string of this experiment (used to name output file) (defaults to a unique id)')
 cmd:option('-progress', false, 'print training progress bar')
 cmd:text()
 
@@ -63,7 +64,7 @@ if opt.profile ~= '' then
   print('profile', opt.profile)
   opt = require(opt.profile)
 end
-opt.id = opt.data .. ':' .. os.uniqueid()
+opt.id = opt.id == '' and (opt.data .. ':' .. os.uniqueid()) or opt.id
 
 nn.FastLSTM.usenngraph = true -- this provides a significant speedup
 
@@ -145,9 +146,10 @@ end
 local xplog = {}
 xplog.opt = opt -- save all hyper-parameters and such
 xplog.vocabSize = loader.vocab_size
+xplog.vocab = loader.vocab
 -- will only serialize params
 xplog.model = nn.Serial(net)
-xplog.model:mediumSerial(false)
+xplog.model:mediumSerial()
 -- keep a log of NLL for each epoch
 xplog.trainNLL = {}
 xplog.valNLL = {}
@@ -226,6 +228,7 @@ while opt.maxepoch <= 0 or epoch <= opt.maxepoch do
   elseif ntrial >= opt.earlystop then
     print("No new minima found after "..ntrial.." epochs.")
     print("Stopping experiment.")
+    print("Sample with : th sample.lua "..path.join(opt.outdir, opt.id..'.t7'))
     os.exit()
   end
 
