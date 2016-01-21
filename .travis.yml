@@ -36,9 +36,12 @@ before_install:
   - mkdir ~/git
   - cd ~/git
   - git clone https://github.com/element-research/rnn.git ~/git/rnn --recursive
+  - git clone https://github.com/torch/nngraph.git ~/git/nngraph --recursive
   - cd ~/git/rnn
   - source ~/torch/install/bin/torch-activate
   - luarocks make rocks/rnn-scm-1.rockspec
+  - cd ~/git/nngraph
+  - luarocks make nngraph-scm-1.rockspec
   - cd $BUILD_DIR
 
 script:
