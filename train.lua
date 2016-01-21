@@ -221,14 +221,14 @@ while opt.maxepoch <= 0 or epoch <= opt.maxepoch do
     -- save best version of model
     xplog.minValNLL = nll
     xplog.epoch = epoch 
-    local filename = path.join(opt.outdir, opt.id..'.t7')
+    local filename = paths.concat(opt.outdir, opt.id..'.t7')
     print("Found new minima. Saving to : "..filename)
     torch.save(filename, xplog)
     ntrial = 0
   elseif ntrial >= opt.earlystop then
     print("No new minima found after "..ntrial.." epochs.")
     print("Stopping experiment.")
-    print("Sample with : th sample.lua "..path.join(opt.outdir, opt.id..'.t7'))
+    print("Sample with : th sample.lua "..paths.concat(opt.outdir, opt.id..'.t7'))
     os.exit()
   end
 
