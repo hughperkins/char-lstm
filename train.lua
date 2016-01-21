@@ -190,7 +190,7 @@ while opt.maxepoch <= 0 or epoch <= opt.maxepoch do
     end
   end
   
-  cutorch.synchronize()
+  if cutorch then cutorch.synchronize() end
   local speed = a:time().real/opt.epochsize
   print(string.format("Speed : %f time/batch ", speed))
   
