@@ -46,8 +46,8 @@ before_install:
 
 script:
   - source ~/torch/install/bin/torch-activate
-  - luajit train.lua -maxepoch 8 -seq 4 -epochsize 10 -back cpu -id travistest
-  - luajit sample.lua -back cpu out/travistest.t7
+  - luajit train.lua -maxepoch 3 -seq 4 -epochsize 50 -back cpu -id travistest
+  - luajit sample.lua -back cpu -len 100 out/travistest.t7
 
 notifications:
   email:
