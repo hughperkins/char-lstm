@@ -36,15 +36,18 @@ before_install:
   - mkdir ~/git
   - cd ~/git
   - git clone https://github.com/element-research/rnn.git ~/git/rnn --recursive
+  - git clone https://github.com/torch/nngraph.git ~/git/nngraph --recursive
   - cd ~/git/rnn
   - source ~/torch/install/bin/torch-activate
   - luarocks make rocks/rnn-scm-1.rockspec
+  - cd ~/git/nngraph
+  - luarocks make nngraph-scm-1.rockspec
   - cd $BUILD_DIR
 
 script:
   - source ~/torch/install/bin/torch-activate
-  - luajit train.lua -maxepoch 8 -len 48 -seq 4 -back cpu
-  - luajit sample.lua -back cpu -len 40 out/weights_tinyshakespeare_8_5.t7
+  - luajit train.lua -maxepoch 3 -seq 4 -epochsize 50 -back cpu -id travistest
+  - luajit sample.lua -back cpu -len 100 out/travistest.t7
 
 notifications:
   email:

@@ -18,10 +18,13 @@ require 'paths'
 require 'torch'
 require 'sys'
 require 'nn'
+require 'dpnn'
 require 'rnn'
+require 'optim'
 
 -- local files
 require 'util/timer'
+require 'util/uniqueid'
 require 'net'
 require 'shared'
 require 'data'
@@ -32,349 +35,203 @@ cmd:text('Train a character-level language model')
 cmd:text()
 cmd:text('Options')
 -- data
-cmd:option('-data','tinyshakespeare','name of data directory. Should contain the file input.txt with input data')
-cmd:option('-back','cuda','cpu|cuda|cl')
-cmd:option('-len', -1, 'only use this many characters from input data. -1 for all data')
+cmd:option('-data', 'tinyshakespeare', 'name of data directory. Should contain the file input.txt with input data')
+cmd:option('-back', 'cuda', 'cpu|cuda|cl')
+cmd:option('-device', 1, 'which GPU device to use')
 cmd:option('-seq', 50, 'sequence length to use')
-cmd:option('-dump', 100, 'iterations between writing out weights')
 cmd:option('-hidden', '128,128', 'size of hidden layers, comma-separated, one per required hidden layer')
-cmd:option('-drop',0 , 'dropout probability')
-cmd:option('-batch',1 , 'batch size (should default to 50 probably)')
-cmd:option('-lr',0.1, 'learning rate')
+cmd:option('-drop', 0 , 'dropout probability')
+cmd:option('-batch', 50 , 'batch size')
+cmd:option('-lr', 2e-3, 'learning rate')
+cmd:option('-lrdecay', 0.97, 'learning rate decay')
+cmd:option('-lrdecayafter', 10, 'in number of epochs, when to start decaying the learning rate')
+cmd:option('-decayrate', 0.95, 'decay rate for rmsprop')
+cmd:option('-clip', 5, 'max l2-norm of concatenation of all gradParam tensors')
+cmd:option('-train_frac',0.95,'fraction of data that goes into train set')
+cmd:option('-val_frac',0.05,'fraction of data that goes into validation set. test_frac will be computed as (1 - train_frac - val_frac)')
 cmd:option('-profile', '', 'options file, written in lua')
-cmd:option('-backprop','online', '(maintainers only) online|throughtime|noseq')
+cmd:option('-epochsize', -1, 'every how many iterations (batches) should we evaluate on validation data?')
 cmd:option('-maxepoch', -1, 'maximum epochs to train; -1 for no limit')
+cmd:option('-earlystop', 50, 'early-stop when the model cant find a new validation NLL minima for this many epochs')
+cmd:option('-outdir', 'out', 'name of output directory')
+cmd:option('-id', '', 'id string of this experiment (used to name output file) (defaults to a unique id)')
+cmd:option('-progress', false, 'print training progress bar')
 cmd:text()
 
-opt = cmd:parse(arg)
-
+local opt = cmd:parse(arg)
+opt.hiddenSizes = opt.hidden:split(',')
 if opt.profile ~= '' then
   print('profile', opt.profile)
-  require(opt.profile)
+  opt = require(opt.profile)
 end
+opt.id = opt.id == '' and (opt.data .. ':' .. os.uniqueid()) or opt.id
 
-local backend = opt.back
+nn.FastLSTM.usenngraph = true -- this provides a significant speedup
 
-if backend == 'cuda' then
+if opt.back == 'cuda' then
   require 'cutorch'
   require 'cunn'
-elseif backend == 'cl' then
+  cutorch.setDevice(opt.device)
+elseif opt.back == 'cl' then
   require 'cltorch'
   require 'clnn'
 end
 
---local dataset = 'tinyshakespeare'
-local dataset = opt.data
-
-local dataDir = 'data/' .. dataset
-
-local dropoutProb = opt.dropout
-local hiddenSizes = opt.hidden:split(',')
-local learningRate = opt.lr
-local seqLength = opt.seq
-local batchSize = opt.batch
-local dumpIntervalIts = opt.dump
-local max_input_length = opt.len
-
-local outDir = 'out'
-
-if not paths.dirp(outDir) then
-  paths.mkdir(outDir)
+if not paths.dirp(opt.outdir) then
+  paths.mkdir(opt.outdir)
 end
 
-local vocabs, ivocab, vocab, input = loadTextFile(dataDir) 
+-- load data from file
 
-print('loaded input')
+local dataDir = 'data/' .. opt.data
+local splitFrac = {opt.train_frac, opt.val_frac, nil}
+local loader = nn.CharTextLoader(dataDir, opt.batch, opt.seq, splitFrac)
+local vocab_size = loader.vocab_size  -- the number of distinct characters
+print('#vocab', loader.vocab_size)
+print('nChar (total)', loader.text_size)
+print('nBatch (train/val/test)', loader.ntrain, loader.nval, loader.ntest)
 
-ivocab = truncateVocab(input, ivocab, max_input_length)
+-- build model
 
-print('#ivocab', #ivocab)
-
-local netParams = {inputSize=#ivocab, hiddenSizes=hiddenSizes, dropout=dropoutProb}
-local net, crit = makeNet(netParams)
+local net, crit = makeLSTM(loader.vocab_size, opt.hiddenSizes, opt.dropout, opt.back == 'cuda' or opt.back == 'cl')
 print('net', net)
 print('crit', crit)
 
-net2 = nn.Sequencer(net)
-crit2 = nn.SequencerCriterion(crit)
+print("options")
+print(opt)
 
-local batchInputs = {}
-local batchOutputs = {}
-local batchOffsets = {}
-
-for s=1,seqLength do
-  batchInputs[s] = torch.FloatTensor(batchSize, #ivocab)
-  batchOutputs[s] = torch.FloatTensor(batchSize, #ivocab)
-end
-
-if backend == 'cuda' then
-  input = input:cuda()
-  for s=1,seqLength do
-    batchInputs[s] = batchInputs[s]:cuda()
-    batchOutputs[s] = batchOutputs[s]:cuda()
-  end
-  net:cuda()
-  crit:cuda()
-elseif backend == 'cl' then
-  input = input:cl()
-  for s=1,seqLength do
-    batchInputs[s] = batchInputs[s]:cl()
-    batchOutputs[s] = batchOutputs[s]:cl()
-  end
-  net:cl()
-  crit:cl()
+if opt.back == 'cuda' then
+  net:cuda(); crit:cuda()
+elseif opt.back == 'cl' then
+  net:cl(); crit:cl()
 else
-  net:float()
-  crit:float()
+  net:float(); crit:float()
 end
 
-local input_len = input:size(1)
-print('input_len', input_len)
+-- build function for propagating a batch
 
-local batchSpacing = math.ceil(input_len / batchSize)
-local inputDouble = input.new():resize(2, input_len)
-inputDouble[1]:copy(input)
-inputDouble[2]:copy(input)
-inputDouble:resize(input_len * 2)
-local inputStriped = inputDouble:unfold(1, input_len, batchSpacing):t()
-inputStriped:resize(input_len, batchSize)
+local params, gradParams = net:getParameters()
+params:uniform(-0.08, 0.08) -- small uniform numbers
 
-function getLabel(vector)
-  -- assumes a single 1-d vector of probabilities
-  local max, label = vector:max(1)
-  return label[1]
-end
-
-function populateBatchInput(batchOffset, debugState, inputStriped, batchInput)
-  local bc2 = inputStriped[batchOffset]
-
-  if debugState.printOutput then
-    local thisCharCode = bc2[1]
-    local thisChar = string.char(ivocab[thisCharCode])
-    debugState.inputString = debugState.inputString .. thisChar
+-- do fwd/bwd and return loss, gradParams
+function feval(_params)
+  if _params ~= params then
+    params:copy(_params)
   end
+  gradParams:zero()
 
-  batchInput:zero()
-  if backend == 'cpu' then
-    batchInput:scatter(2, bc2:reshape(batchSize, 1):long(), 1)
-  else
-    batchInput:scatter(2, bc2:reshape(batchSize, 1), 1)
+  -- get batch of sequences
+  -- input and target are each tensors of size seqLen x batchSize
+  local input, target = loader:next_batch(loader.TRAIN, true)
+
+  -- forward
+  local output = net:forward(input)
+  local err = crit:forward(output, target)
+  
+  -- backward
+  local gradOutput = crit:backward(output, target)
+  net:backward(input, gradOutput)
+  
+  -- clip gradients element-wise
+  if opt.clip > 0 then
+    gradParams:clamp(-opt.clip, opt.clip)
   end
+  
+  return err, gradParams
 end
 
--- what this does is, shift value up and down by an integer multiple
--- of modulus, so that it is in range 1 .. modulus
--- for example, if modules is 5, then for the following input values
--- we will get the following output values
--- input  output
--- 0      5
--- 1      1
--- 2      2
--- 3      3
--- 4      4
--- 5      5
--- 6      1
--- 7      2
--- (this is different from normal lua '%' function, which will put
--- into range 0 .. (modulus-1), which is quite not lua-like :-)
-function lua_modulus(value, modulus)
-  return (value - 1) % modulus + 1
-end
+-- setup experiment log
 
-function doOutputDebug(debugState, batchOutput)
-  if debugState.printOutput then
---    print('batchInput', batchInput:narrow(2,1,seqLength):reshape(1,seqLength))
-    print('batchOutput:exp()', batchOutput:exp():narrow(2,1,debugState.seqLength):reshape(1, debugState.seqLength))
-    local label = getLabel(batchOutput[1])
-    debugState.outputString = debugState.outputString .. string.char(debugState.ivocab[label])
-  end
-end
+-- is saved to file every time a new validation minima is found
+local xplog = {}
+xplog.opt = opt -- save all hyper-parameters and such
+xplog.vocabSize = loader.vocab_size
+xplog.vocab = loader.vocab
+-- will only serialize params
+xplog.model = nn.Serial(net)
+xplog.model:mediumSerial()
+-- keep a log of NLL for each epoch
+xplog.trainNLL = {}
+xplog.valNLL = {}
+-- will be used for early-stopping
+xplog.minValNLL = 99999999
+xplog.epoch = 0
+local ntrial = 0
 
-function doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)
-  if debugState.printOutput then
---    print('batchTarget', batchTarget)
-    local thisCharCode = batchTarget[1]
-    local thisChar = string.char(ivocab[thisCharCode])
-    debugState.targetString = thisChar .. debugState.targetString
-    print('batchLoss', batchLoss)
---    print('batchGradOutput', batchGradOutput)
-  end
-end
-
-function makeBatchTarget(targetOffset, debugState, inputStriped)
-  local batchTarget = inputStriped[targetOffset]
-  return batchTarget
-end
-
-local it = 1
 local epoch = 1
---local it = 1
-local itsPerEpoch = math.floor(input:size(1) / seqLength)
-if itsPerEpoch < 1 then
-  error('seqlength cannot be smaller than input size')
-end
-local params = net:getParameters()
-net:training()
+opt.epochsize = opt.epochsize == -1 and loader.ntrain or opt.epochsize
+local optimstate = {learningRate = opt.lr, alpha = opt.decayrate}
+
 while opt.maxepoch <= 0 or epoch <= opt.maxepoch do
-  sys.tic()
-  local seqLoss = 0
-
-  local timer = timer_init()
-  local debugState = {}
-  debugState.printOutput = false
-  debugState.inputString = ''
-  debugState.targetString = ''
-  debugState.outputString = ''
-  debugState.seqLength = seqLength
-  debugState.ivocab = ivocab
-  local globalIt = epoch * itsPerEpoch + it
---  print('epoch', epoch, 'itsPerEpoch', itsPerEpoch, 'it', it, it % 10)
-  if globalIt % 50 == 0 then
---  if true then
-    print('======================')
-    print('globalIt', globalIt, 'epoch', epoch, 'it', it)
-    debugState.printOutput = true
-  end
-  local epochOffset = epoch - 1
-  epochOffset = 0
-  if opt.backprop == 'online' then
-
-    net:forget()
-    net:zeroGradParameters()
-    net:backwardOnline()
-    for s=1,seqLength do
-      batchOffsets[s] = lua_modulus(epochOffset + (it - 1) * seqLength + (s - 1) + 1, input_len)
-      timer_update(timer, 'forward setup')
-      populateBatchInput(batchOffsets[s], debugState, inputStriped, batchInputs[s])
-
-      timer_update(timer, 'forward run')
-      local batchOutput = net:forward(batchInputs[s])
---      batchInputs[s] = batchInput
-      batchOutputs[s]:copy(batchOutput)
-
---      doOutputDebug(debugState, batchOutput)
+  print("")
+  print("Epoch #"..epoch.." :")
+  
+  -- 1. training
+  
+  local sumErr = 0
+  net:training()
+  local a = torch.Timer()
+  for i=1,opt.epochsize do
+    
+    local _, err = optim.rmsprop(feval, params, optimstate)
+    sumErr = sumErr + err[1]
+    
+    if opt.progress then
+      xlua.progress(i, opt.epochsize)
     end
-
-    for s=seqLength,1,-1 do
-      timer_update(timer, 'backward setup')
-      local targetOffset = lua_modulus(batchOffsets[s] + 1, input_len)
-      local batchTarget = makeBatchTarget(targetOffset, debugState, inputStriped)
-
-      timer_update(timer, 'backward run')
-      local batchLoss = crit:forward(batchOutputs[s], batchTarget)
-      local batchGradOutput = crit:backward(batchOutputs[s], batchTarget)
-      net:backward(batchInputs[s], batchGradOutput)
-
---      if debugState.printOutput then
---        print('batchInputs[s]', batchInputs[s])
---        print('batchTarget', batchTarget)
---        print('batchGradOutput', batchGradOutput)
---      end
-
-      seqLoss = seqLoss + batchLoss
---      doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)
-    end
-    net:updateParameters(learningRate)
-  elseif opt.backprop == 'throughtime' then
-    if #hiddenSizes > 1 then
-      error('cannot use backwardsthroughtime with more than one hidden layer, should use backwardsonline instead')
-    end
-
-    net:forget()
-    net:zeroGradParameters()
---    net:backwardOnline()
-    for s=1,seqLength do
-      batchOffsets[s] = lua_modulus(epochOffset + (it - 1) * seqLength + (s - 1) + 1, input_len)
-
-      timer_update(timer, 'forward setup')
-      populateBatchInput(batchOffsets[s], debugState, inputStriped, batchInputs[s])
-
-      timer_update(timer, 'forward run')
-      local batchOutput = net:forward(batchInputs[s])
---      batchInputs[s] = batchInput
-      batchOutputs[s]:copy(batchOutput)
-
---      doOutputDebug(debugState, batchOutput)
---    end
-
---    for s=seqLength,1,-1 do
-      timer_update(timer, 'backward setup')
-      local targetOffset = lua_modulus(batchOffsets[s] + 1, input_len)
-      local batchTarget = makeBatchTarget(targetOffset, debugState, inputStriped)
-
-      timer_update(timer, 'backward run')
-      local batchLoss = crit:forward(batchOutputs[s], batchTarget)
-      local batchGradOutput = crit:backward(batchOutputs[s], batchTarget)
-      net:backward(batchInputs[s], batchGradOutput)
-
---      if debugState.printOutput then
---        print('batchInputs[s]', batchInputs[s])
---        print('batchTarget', batchTarget)
---        print('batchGradOutput', batchGradOutput)
---      end
-
-      seqLoss = seqLoss + batchLoss
---      doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)
-    end
-    net:backwardThroughTime()
-    net:updateParameters(learningRate)
-  elseif opt.backprop == 'noseq' then
-    for s=1,seqLength do
-      net:forget()
-      net:zeroGradParameters()
-      local batchOffset = lua_modulus(epochOffset + (it - 1) * seqLength + (s - 1) + 1, input_len)
-      local targetOffset = lua_modulus(batchOffset + 1, input_len)
-
-      timer_update(timer, 'forward setup')
-      populateBatchInput(batchOffset, debugState, inputStriped, batchInputs[s])
-
-      timer_update(timer, 'backward setup')
-      local batchTarget = makeBatchTarget(targetOffset, debugState, inputStriped)
-
-      timer_update(timer, 'forward run')
-      local batchOutput = net:forward(batchInputs[s])
---      doOutputDebug(debugState, batchOutput)
-
-      timer_update(timer, 'backward run')
-      local batchLoss = crit:forward(batchOutput, batchTarget)
-      local batchGradOutput = crit:backward(batchOutput, batchTarget)
-      net:backward(batchInputs[s], batchGradOutput)
-      if debugState.printOutput then
-        
+    
+    -- exponential learning rate decay
+    if i % loader.ntrain == 0 and opt.lrdecay < 1 then
+      if epoch >= opt.lrdecayafter then
+        local decayfactor = opt.lrdecay
+        optimstate.learningRate = optimstate.learningRate * decayfactor -- decay it
+        print('decayed learning rate by a factor ' .. decayfactor .. ' to ' .. optimstate.learningRate)
       end
-      net:updateParameters(learningRate)
-
-      seqLoss = seqLoss + batchLoss
---      doBackwardDebug(debugState, batchTarget, batchLoss, batchGradOutput)
     end
-  else
-    error('invalid opt.backprop value')
   end
-  timer_update(timer, 'end')
+  
+  if cutorch then cutorch.synchronize() end
+  local speed = a:time().real/opt.epochsize
+  print(string.format("Speed : %f time/batch ", speed))
+  
+  local nll = sumErr/(opt.epochsize*opt.seq)
+  print("Training NLL : "..nll)
+  
+  xplog.trainNLL[epoch] = nll
+  
+  -- 2. evaluation
+  
+  local sumErr = 0
+  for i=1,loader.nval do
+    local input, target = loader:next_batch(loader.VAL, true)
 
-  if debugState.printOutput then
---    timer_dump(timer)
---    print('params:narrow(1,1,seqLength)', params:narrow(1,1,seqLength):reshape(1,seqLength))
---    print('input ', debugState.inputString)
---    print('target', debugState.targetString)
---    print('output', debugState.outputString)
-    print('epoch=' .. epoch, 'it=' .. it .. '/' .. itsPerEpoch, 'seqLoss=' .. seqLoss, 'time=' .. sys.toc())
+    local output = net:forward(input)
+    local err = crit:forward(output, target)
+    sumErr = sumErr + err
   end
-  if globalIt ~= 1 and ((globalIt - 1) % dumpIntervalIts == 0) then
-    local filename = weights_t7:gsub('$DATASET', dataset):gsub('$EPOCH', epoch):gsub('$IT', it)
-    print('filename', filename)
-    local data = {}
-    data.dataset = dataset
-    data.netParams = netParams
-    data.weights = params:float()
-    data.backend = backend
-    data.vocabSize = #ivocab
-    torch.save(outDir .. '/' .. filename, data) 
+  
+  local nll = sumErr/(loader.nval*opt.seq)
+  print("Validation NLL : "..nll)
+  
+  xplog.valNLL[epoch] = nll
+  ntrial = ntrial + 1
+  
+  -- early-stopping
+  if nll < xplog.minValNLL then
+    -- save best version of model
+    xplog.minValNLL = nll
+    xplog.epoch = epoch 
+    local filename = paths.concat(opt.outdir, opt.id..'.t7')
+    print("Found new minima. Saving to : "..filename)
+    torch.save(filename, xplog)
+    ntrial = 0
+  elseif ntrial >= opt.earlystop then
+    print("No new minima found after "..ntrial.." epochs.")
+    print("Stopping experiment.")
+    print("Sample with : th sample.lua "..paths.concat(opt.outdir, opt.id..'.t7'))
+    os.exit()
   end
-  it = it + 1
-  if it > itsPerEpoch then
-    epoch = epoch + 1
-    it = 1
-  end
+
+  epoch = epoch + 1
 end
 
